@@ -2,6 +2,10 @@
 # Обновление по команде владельца: бэкап -> git pull -> пересборка -> миграции -> перезапуск.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Installs made before COMPOSE_PROFILES existed used the local database.
+if ! grep -q '^COMPOSE_PROFILES=' .env && ! grep -q '^DATABASE_URL=' .env; then
+  echo "COMPOSE_PROFILES=localdb" >> .env
+fi
 echo "==> Бэкап перед обновлением"
 docker compose exec -T worker python -m app.ops.backup run
 echo "==> Получаю новую версию"

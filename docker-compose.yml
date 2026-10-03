@@ -5,7 +5,8 @@ x-app: &app
   image: medproject-sales:latest
   env_file: .env
   environment:
-    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    # Managed database (Timeweb Cloud): set DATABASE_URL in .env and remove "localdb" from COMPOSE_PROFILES.
+    DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
     REDIS_URL: redis://redis:6379/0
     FILES_DIR: /data/files
     BACKUP_DIR: /data/backups
@@ -19,6 +20,7 @@ x-app: &app
 
 services:
   postgres:
+    profiles: [localdb]  # not started when a managed database is used
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
@@ -52,7 +54,7 @@ services:
     restart: "no"
     command: ["alembic", "upgrade", "head"]
     depends_on:
-      postgres: { condition: service_healthy }
+      postgres: { condition: service_healthy, required: false }
 
   api:
     <<: *app

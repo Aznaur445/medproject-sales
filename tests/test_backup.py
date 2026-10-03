@@ -68,3 +68,12 @@ def test_prune_never_deletes_the_only_backup(backup_settings):
     old = datetime(2020, 1, 1, tzinfo=UTC).strftime(backup.STAMP_FORMAT)
     (root / old).mkdir(parents=True)
     assert backup.prune(backup_settings) == []
+
+
+def test_pg_env_passes_tls_settings_for_managed_database():
+    settings = get_settings().model_copy(
+        update={"database_url": "postgresql+psycopg://u%40x:p%7Cw@10.0.0.5:6432/medproject?sslmode=require"}
+    )
+    args, env = backup._pg_env(settings)
+    assert args == ["-h", "10.0.0.5", "-p", "6432", "-U", "u@x", "-d", "medproject"]
+    assert env["PGPASSWORD"] == "p|w" and env["PGSSLMODE"] == "require"

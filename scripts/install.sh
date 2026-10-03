@@ -73,6 +73,7 @@ if [[ ! -f .env ]]; then
   tg_token=$(ask "Токен Telegram-бота (можно оставить пустым и заполнить позже)")
   tg_id=$(ask "Ваш Telegram ID (можно позже)")
   fernet=$(openssl rand -base64 32 | tr '+/' '-_')
+  db_mode=$(ask "База данных: 1 — в Docker на этом сервере, 2 — управляемая база Timeweb Cloud" "1")
   sed -i \
     -e "s|^PUBLIC_URL=.*|PUBLIC_URL=https://${domain}|" \
     -e "s|^DOMAIN=.*|DOMAIN=${domain}|" \
@@ -84,11 +85,36 @@ if [[ ! -f .env ]]; then
     -e "s|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=${tg_token}|" \
     -e "s|^TELEGRAM_OWNER_IDS=.*|TELEGRAM_OWNER_IDS=${tg_id}|" \
     .env
+  if [[ "$db_mode" == "2" ]]; then
+    echo "Данные подключения смотрите в панели Timeweb: Базы данных → ваша база → Подключение."
+    db_host=$(ask "Хост базы (лучше приватный IP, если сервер и база в одной сети)")
+    db_port=$(ask "Порт" "5432")
+    db_name=$(ask "Имя базы (создайте отдельную базу для сервиса, например medproject)" "medproject")
+    db_user=$(ask "Пользователь")
+    read -r -s -p "Пароль пользователя базы: " db_pass; echo
+    db_url=$(DB_USER="$db_user" DB_PASS="$db_pass" DB_HOST="$db_host" DB_PORT="$db_port" DB_NAME="$db_name" \
+      python3 - <<'PY'
+import os
+from urllib.parse import quote
+
+env = os.environ
+user, password, name = (quote(env[k], safe="") for k in ("DB_USER", "DB_PASS", "DB_NAME"))
+print(f"postgresql+psycopg://{user}:{password}@{env['DB_HOST']}:{env['DB_PORT']}/{name}?sslmode=require")
+PY
+)
+    sed -i -e "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=|" .env
+    sed -i -e "/^# DATABASE_URL=/d" .env
+    echo "DATABASE_URL=${db_url}" >> .env
+  fi
   chmod 600 .env
   echo "Файл .env создан. Ключи сгенерированы. Сохраните копию .env в надёжном месте:"
   echo "без FERNET_KEY нельзя расшифровать сохранённые пароли из бэкапа."
 else
   echo ".env уже существует, не трогаю."
+  # Installs made before COMPOSE_PROFILES existed used the local database.
+  if ! grep -q '^COMPOSE_PROFILES=' .env && ! grep -q '^DATABASE_URL=' .env; then
+    echo "COMPOSE_PROFILES=localdb" >> .env
+  fi
 fi
 
 say "6/7 Сборка и запуск"

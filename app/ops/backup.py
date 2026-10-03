@@ -17,7 +17,7 @@ import tarfile
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, get_logger
@@ -41,6 +41,10 @@ def _pg_env(settings: Settings) -> tuple[list[str], dict[str, str]]:
         url.path.lstrip("/"),
     ]
     env = {**os.environ, "PGPASSWORD": unquote(url.password or "")}
+    query = parse_qs(url.query)
+    for param, var in (("sslmode", "PGSSLMODE"), ("sslrootcert", "PGSSLROOTCERT")):
+        if param in query:
+            env[var] = query[param][0]  # managed databases require TLS
     return args, env
 
 
