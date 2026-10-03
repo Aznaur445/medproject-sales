@@ -1,0 +1,21 @@
+{
+	email {$ACME_EMAIL:admin@example.com}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	reverse_proxy api:8000
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$STATUS_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy uptime-kuma:3001
+}

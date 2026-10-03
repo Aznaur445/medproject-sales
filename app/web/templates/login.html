@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Вход · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="card narrow">
+  <h2>Вход</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/login" autocomplete="on">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="username">Логин</label>
+    <input id="username" name="username" autocomplete="username" required autofocus>
+    <label for="password">Пароль</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button class="full" type="submit">Далее</button>
+  </form>
+</div>
+{% endblock %}

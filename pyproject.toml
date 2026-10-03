@@ -1,0 +1,60 @@
+[project]
+name = "medproject-sales"
+version = "0.1.0"
+description = "Search, scoring and sales pipeline for medical facility design requests"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "itsdangerous>=2.2",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "sqlalchemy[asyncio]>=2.0.32",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.13",
+    "redis>=5.0",
+    "celery[redis]>=5.4",
+    "aiogram>=3.12",
+    "httpx>=0.27",
+    "argon2-cffi>=23.1",
+    "pyotp>=2.9",
+    "qrcode>=7.4",
+    "cryptography>=43",
+    "structlog>=24.4",
+    "boto3>=1.35",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC"]
+ignore = ["S101", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106"]
+"migrations/**" = ["E501"]
+"app/ops/backup.py" = ["S603", "S607"]  # pg_dump/pg_restore with fixed argument lists
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]

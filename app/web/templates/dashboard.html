@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Сводка</h2>
+<div class="grid">
+  <div class="card"><div class="muted">Заявок в базе</div><div class="stat">{{ listings }}</div></div>
+  <div class="card">
+    <div class="muted">Состояние сервиса</div>
+    <div class="stat {{ 'ok' if health.status == 'ok' else 'bad' }}">{{ 'Работает' if health.status == 'ok' else 'Есть сбои' }}</div>
+  </div>
+</div>
+<div class="card">
+  <h3>Компоненты</h3>
+  <table>
+    <tr><td>База данных</td><td class="{{ 'ok' if health.db.ok else 'bad' }}">{{ 'OK' if health.db.ok else 'Ошибка' }}</td></tr>
+    <tr><td>Redis (очереди)</td><td class="{{ 'ok' if health.redis.ok else 'bad' }}">{{ 'OK' if health.redis.ok else 'Ошибка' }}</td></tr>
+    {% for name, c in health.components.items() %}
+    <tr><td>{{ {'worker': 'Обработчик задач', 'scheduler': 'Планировщик', 'bot': 'Telegram-бот'}[name] }}</td>
+        <td class="{{ 'ok' if c.ok else 'bad' }}">{{ 'OK' if c.ok else 'нет сигнала' }}{% if c.age_s is not none %} <span class="muted">({{ c.age_s }} с назад)</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+<p class="muted">Этап 1: фундамент. Заявки, КП и воронка появятся на следующих этапах.</p>
+{% endblock %}

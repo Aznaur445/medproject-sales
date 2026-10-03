@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Код подтверждения · {{ app_name }}{% endblock %}
+{% block content %}
+<div class="card narrow">
+  <h2>Код из приложения</h2>
+  <p class="muted">Откройте приложение-аутентификатор и введите 6 цифр.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/login/2fa">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input name="code" inputmode="numeric" pattern="[0-9 ]{6,7}" autocomplete="one-time-code" required autofocus>
+    <button class="full" type="submit">Войти</button>
+  </form>
+</div>
+{% endblock %}

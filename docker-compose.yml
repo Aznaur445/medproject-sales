@@ -1,0 +1,146 @@
+name: medproject
+
+x-app: &app
+  build: .
+  image: medproject-sales:latest
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    REDIS_URL: redis://redis:6379/0
+    FILES_DIR: /data/files
+    BACKUP_DIR: /data/backups
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 30s
+  logging: &logging
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+  networks: [internal]
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+    networks: [internal]
+
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app
+    volumes: [files:/data/files]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.ops.healthcheck", "api"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks: [internal, web]
+
+  worker:
+    <<: *app
+    command: ["celery", "-A", "app.worker.celery_app:celery", "worker", "--loglevel=INFO", "--concurrency=2"]
+    volumes: [files:/data/files, backups:/data/backups]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.worker.celery_app:celery inspect ping -d celery@$$HOSTNAME --timeout 10 | grep -q pong"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 30s
+    stop_signal: SIGTERM  # warm shutdown: finish running tasks
+
+  scheduler:
+    <<: *app
+    command: ["celery", "-A", "app.worker.celery_app:celery", "beat", "--loglevel=INFO",
+              "--schedule", "/tmp/celerybeat-schedule"]
+    depends_on:
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.ops.healthcheck", "scheduler"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  bot:
+    <<: *app
+    command: ["python", "-m", "app.bot.main"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.ops.healthcheck", "bot"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      DOMAIN: ${DOMAIN}
+      STATUS_DOMAIN: ${STATUS_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on: [api]
+    logging: *logging
+    networks: [web]
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    restart: unless-stopped
+    volumes: [kuma:/app/data]
+    logging: *logging
+    networks: [web]
+
+networks:
+  internal:
+  web:
+
+volumes:
+  pgdata:
+  redisdata:
+  files:
+  backups:
+  caddydata:
+  caddyconfig:
+  kuma:

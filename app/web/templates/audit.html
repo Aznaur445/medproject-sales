@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Журнал действий</h2>
+<div class="card table-wrap">
+  <table>
+    <tr><th>Время (UTC)</th><th>Кто</th><th>Действие</th><th>Объект</th><th>IP</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.ts.strftime('%d.%m.%Y %H:%M:%S') }}</td>
+      <td>{{ r.actor }}{% if r.user_id %} #{{ r.user_id }}{% endif %}</td>
+      <td>{{ r.action }}</td>
+      <td>{% if r.entity_type %}{{ r.entity_type }} #{{ r.entity_id }}{% endif %}</td>
+      <td class="muted">{{ r.ip or '' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">Пока пусто</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
