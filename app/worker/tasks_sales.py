@@ -11,7 +11,7 @@ from app.models.enums import MessageDirection, MessageStatus
 from app.services import mailer, storage
 from app.services.cards import card_keyboard, card_text
 from app.services.notify import alert, send_owner_message, telegram_call, telegram_send_document
-from app.services.proposals import pending_message, prepare_proposal
+from app.services.proposals import ProposalError, pending_message, prepare_proposal
 from app.worker.celery_app import celery
 
 log = get_logger(__name__)
@@ -32,16 +32,30 @@ def send_card(message_id: int) -> None:
 
 
 @celery.task(bind=True, max_retries=3, default_retry_delay=60)
-def prepare_proposal_task(self, listing_id: int, price: str | None = None, user_id: int | None = None) -> int | None:
+def prepare_proposal_task(
+    self,
+    listing_id: int,
+    price: str | None = None,
+    user_id: int | None = None,
+    section_prices: dict[str, str] | None = None,
+) -> int | None:
     from decimal import Decimal
 
     try:
         with sync_session() as db:
             message = prepare_proposal(
-                db, listing_id, Decimal(price) if price else None, user_id=user_id, actor="worker"
+                db,
+                listing_id,
+                Decimal(price) if price else None,
+                user_id=user_id,
+                actor="worker",
+                section_prices={k: Decimal(v) for k, v in section_prices.items()} if section_prices else None,
             )
             db.commit()
             message_id = message.id
+    except ProposalError as exc:
+        send_owner_message(f"⚠️ КП по заявке #{listing_id} не пересчитано: {exc}")
+        return None
     except Exception as exc:
         log.exception("prepare_proposal_failed", listing_id=listing_id)
         if self.request.retries >= self.max_retries:

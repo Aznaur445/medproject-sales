@@ -96,6 +96,8 @@ class ProposalVersion(Base):
     docx_key: Mapped[str | None] = mapped_column(String(500))
     pdf_key: Mapped[str | None] = mapped_column(String(500))
     estimate_id: Mapped[int | None] = mapped_column(ForeignKey("estimate.id", ondelete="SET NULL"))
+    # Internal: subcontractor + trips cost of exactly these sections (never rendered into documents).
+    cost_total: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("user.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

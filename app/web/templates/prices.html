@@ -8,13 +8,14 @@
   <div class="card table-wrap">
     <h3>Разделы</h3>
     <table>
-      <tr><th>Код</th><th>Название</th><th>Стадия</th><th>₽/м²</th><th>Мин. цена</th><th>Себест., %</th><th>По умолч.</th><th>Удалить</th></tr>
+      <tr><th>Код</th><th>Название</th><th>Стадия</th><th>Доля пакета, %</th><th>или ₽/м²</th><th>Мин. цена</th><th>Себест., %</th><th>По умолч.</th><th>Удалить</th></tr>
       {% for s in table.sections %}{% set i = loop.index0 %}
       <tr>
         <td><input name="s{{ i }}_code" value="{{ s.code }}" size="5"></td>
         <td><input name="s{{ i }}_name" value="{{ s.name }}" size="30"><input name="s{{ i }}_description" value="{{ s.description }}" size="30" placeholder="описание для КП" class="small" style="margin-top:4px"></td>
         <td><select name="s{{ i }}_stage">{% for st, t in [('pre', 'Предпроект'), ('pd', 'ПД'), ('rd', 'РД'), ('extra', 'Доп.')] %}<option value="{{ st }}" {{ 'selected' if s.stage == st }}>{{ t }}</option>{% endfor %}</select></td>
-        <td><input name="s{{ i }}_rate" value="{{ s.rate_per_m2 }}" size="6" inputmode="decimal"></td>
+        <td><input name="s{{ i }}_weight" value="{{ (s.weight * 100)|round(2) if s.weight is not none else '' }}" size="5" inputmode="decimal"></td>
+        <td><input name="s{{ i }}_rate" value="{{ s.rate_per_m2 if s.rate_per_m2 else '' }}" size="5" inputmode="decimal"></td>
         <td><input name="s{{ i }}_min" value="{{ s.min_price|int }}" size="8" inputmode="numeric"></td>
         <td><input name="s{{ i }}_cost" value="{{ (s.cost_share * 100)|round(1) }}" size="4" inputmode="decimal"></td>
         <td><input type="checkbox" name="s{{ i }}_default" value="1" {{ 'checked' if s.default_selected }}></td>
@@ -26,12 +27,21 @@
         <td><input name="s{{ i }}_code" size="5" placeholder="новый"></td>
         <td><input name="s{{ i }}_name" size="30"><input name="s{{ i }}_description" size="30" placeholder="описание для КП" class="small" style="margin-top:4px"></td>
         <td><select name="s{{ i }}_stage"><option value="rd">РД</option><option value="pd">ПД</option><option value="pre">Предпроект</option><option value="extra">Доп.</option></select></td>
-        <td><input name="s{{ i }}_rate" size="6"></td><td><input name="s{{ i }}_min" size="8"></td>
+        <td><input name="s{{ i }}_weight" size="5"></td><td><input name="s{{ i }}_rate" size="5"></td><td><input name="s{{ i }}_min" size="8"></td>
         <td><input name="s{{ i }}_cost" size="4" value="50"></td><td><input type="checkbox" name="s{{ i }}_default" value="1"></td><td></td>
       </tr>
       {% endfor %}
     </table>
-    <p class="small muted">Цена раздела = ставка × площадь × коэффициенты, но не меньше минимальной. «Себест., %» — сколько от цены раздела уходит субподрядчику.</p>
+    <p class="small muted">Цена раздела = цена пакета по площади × доля раздела × коэффициенты, но не меньше минимальной.
+      Доли разделов стандартного пакета (АР, ЭОМ, ВК, ОВиК, СС) в сумме дают 100%; дополнительные разделы — доля от цены пакета.
+      Если доля не указана, используется ставка ₽/м². «Себест., %» — сколько от цены раздела уходит субподрядчику.</p>
+  </div>
+  <div class="card">
+    <h3>Цена стандартного пакета по площади</h3>
+    <p class="small muted">Строка: «площадь м² = цена пакета ₽». Между точками цена растёт равномерно, после последней — с тем же шагом.
+      Чем больше объект, тем дешевле м².</p>
+    <textarea name="package_curve" rows="6">{% for p in table.package_curve %}{{ p.area_m2|int }} = {{ p.price|int }}
+{% endfor %}</textarea>
   </div>
   <div class="card">
     <h3>Себестоимость и маржа</h3>
@@ -56,9 +66,7 @@
     <label>Регионы (строка: «Регион = коэффициент», остальные 1,0)</label>
     <textarea name="regions" rows="3">{% for k, v in table.regions.items() %}{{ k }} = {{ v }}
 {% endfor %}</textarea>
-    <label>Масштаб по площади (строка: «от_м² = коэффициент»)</label>
-    <textarea name="area_steps" rows="3">{% for s in table.area_steps %}{{ s.from_m2 }} = {{ s.multiplier }}
-{% endfor %}</textarea>
+
     <label class="check"><input type="checkbox" name="is_example" value="1" {{ 'checked' if table.is_example }}> Это расценки-пример (показывать предупреждение)</label>
     <label>Комментарий к версии</label><input name="comment" placeholder="что поменяли">
     {% if owner %}<button type="submit" style="margin-top:10px">Сохранить новую версию</button>{% endif %}

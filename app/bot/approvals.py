@@ -16,15 +16,17 @@ from sqlalchemy import func, select
 
 from app.core.db import sync_session
 from app.core.numbers import parse_amount
-from app.models import Listing, Thread, User
+from app.models import Listing, ProposalVersion, Thread, User
 from app.models import Message as Msg
 from app.models.enums import ListingStatus, MessageDirection, MessageStatus
 from app.services import settings_store as ss
 from app.services.audit import audit_sync
+from app.services.calculator import PriceTableData
 from app.services.cards import card_keyboard, card_text, needs_double_confirmation, short_hash
-from app.services.listings import ManualListingInput, create_manual_listing
+from app.services.listings import ManualListingInput, active_price_table, create_manual_listing
 from app.services.proposal_doc import money
-from app.services.proposals import ProposalError, approve, postpone, reject, update_text
+from app.services.proposals import ProposalError, approve, postpone, reject, update_text, version_sections
+from app.services.section_edit import format_sections, parse_section_prices
 
 router = Router()
 
@@ -45,6 +47,7 @@ STATUS_NAMES = {
 class Edit(StatesGroup):
     price = State()
     text = State()
+    sections = State()
 
 
 async def in_thread(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -139,6 +142,19 @@ async def on_card_action(cb: CallbackQuery, state: FSMContext) -> None:
         await state.update_data(message_id=mid)
         await cb.message.answer("Введите новую сумму КП в рублях, например: 1450000\n/cancel — отмена")
         await cb.answer()
+    elif action == "sections":
+        info = await in_thread(_sections_info, mid)
+        if info is None:
+            await cb.answer("Нет данных о разделах", show_alert=True)
+            return
+        await state.set_state(Edit.sections)
+        await state.update_data(message_id=mid)
+        await cb.message.answer(
+            info
+            + "\n\nПришлите строки с новыми ценами, например:\nАР 250000\nОВиК 1,2 млн\nПБ 0 — убрать раздел"
+            + "\nНе указанные разделы останутся как есть. /cancel — отмена"
+        )
+        await cb.answer()
     elif action == "text":
         await state.set_state(Edit.text)
         await state.update_data(message_id=mid)
@@ -197,6 +213,59 @@ async def on_new_price(message: Message, state: FSMContext) -> None:
 
     prepare_proposal_task.delay(listing_id, str(amount))
     await message.answer(f"Пересчитываю КП на {money(amount)}. Новая карточка придёт через минуту.")
+
+
+def _section_context(mid: int) -> tuple[int, list[dict], dict[str, str]] | None:
+    """listing id, current sections of the version, all sections available (estimate + price table)."""
+    with sync_session() as db:
+        message = db.get(Msg, mid)
+        version = (
+            db.get(ProposalVersion, message.proposal_version_id) if message and message.proposal_version_id else None
+        )
+        if version is None:
+            return None
+        thread = db.get(Thread, message.thread_id)
+        table = PriceTableData.model_validate(active_price_table(db).data)
+        available = {r.code: r.name for r in table.sections}
+        current = version_sections(version)
+        for item in current:
+            available.setdefault(item["code"], item["name"])
+        return thread.listing_id, current, available
+
+
+def _sections_info(mid: int) -> str | None:
+    ctx = _section_context(mid)
+    if ctx is None:
+        return None
+    _, current, available = ctx
+    return "🧮 Цены по разделам\n\n" + format_sections(current, available)
+
+
+@router.message(Edit.sections)
+async def on_section_prices(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    ctx = await in_thread(_section_context, data["message_id"])
+    if ctx is None:
+        await state.clear()
+        await message.answer("КП не найдено.")
+        return
+    listing_id, current, available = ctx
+    try:
+        changes = parse_section_prices(message.text or "", available)
+    except ValueError as exc:
+        await message.answer(f"Не получилось: {exc}.\nИсправьте и пришлите ещё раз или /cancel.")
+        return
+    prices = {item["code"]: Decimal(str(item["price"])) for item in current}
+    prices.update(changes)
+    if not any(v > 0 for v in prices.values()):
+        await message.answer("Нельзя убрать все разделы. Пришлите цены ещё раз или /cancel.")
+        return
+    await state.clear()
+    from app.worker.tasks_sales import prepare_proposal_task
+
+    prepare_proposal_task.delay(listing_id, None, None, {k: str(v) for k, v in prices.items()})
+    total = sum((v for v in prices.values() if v > 0), Decimal("0"))
+    await message.answer(f"Пересобираю КП: итого {money(total)}. Новая карточка с маржой придёт через минуту.")
 
 
 def _update_text(mid: int, text: str, tg_id: int) -> None:

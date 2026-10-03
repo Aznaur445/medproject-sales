@@ -16,12 +16,32 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.models import Approval, CalendarEvent, Listing, Message, Organization, Proposal, ProposalVersion, Thread
+from app.models import (
+    Approval,
+    CalendarEvent,
+    Estimate,
+    Listing,
+    Message,
+    Organization,
+    PriceTable,
+    Proposal,
+    ProposalVersion,
+    Thread,
+)
 from app.models.enums import ApprovalDecision, ListingStatus, MessageDirection, MessageStatus, ProposalStatus
 from app.services import settings_store as ss
 from app.services import storage
 from app.services.audit import audit_sync
-from app.services.calculator import EstimateResult, distribute
+from app.services.calculator import (
+    EstimateInput,
+    EstimateResult,
+    PriceEvaluation,
+    PriceTableData,
+    SectionPrice,
+    distribute,
+    evaluate_price,
+    round_money,
+)
 from app.services.listings import latest_estimate, listing_email
 from app.services.proposal_doc import ProposalContent, ProposalSection, docx_to_pdf, money, render_docx
 
@@ -70,6 +90,59 @@ def cover_letter(
     return subject, "\n".join(lines)
 
 
+def custom_sections(
+    estimated: list[SectionPrice], table: PriceTableData, prices: dict[str, Decimal]
+) -> list[SectionPrice]:
+    """Apply owner's section prices: keep estimate order, drop zeros, add sections known to the price table."""
+    by_code = {s.code: s for s in estimated}
+    rates = {r.code: r for r in table.sections}
+    unknown = [c for c in prices if c not in by_code and c not in rates]
+    if unknown:
+        raise ProposalError(f"Неизвестные разделы: {', '.join(unknown)}")
+    result: list[SectionPrice] = []
+    order = [s.code for s in estimated] + [c for c in prices if c not in by_code]
+    for code in order:
+        if code in prices:
+            price = Decimal(prices[code])
+            if price <= 0:
+                continue
+        elif code in by_code:
+            price = by_code[code].price
+        else:
+            continue
+        if code in by_code:
+            base = by_code[code]
+            result.append(base.model_copy(update={"price": price}))
+        else:
+            rate = rates[code]
+            result.append(
+                SectionPrice(
+                    code=code,
+                    name=rate.name,
+                    description=rate.description,
+                    stage=rate.stage,
+                    price=price,
+                    cost=(price * rate.cost_share).quantize(Decimal("1")),
+                )
+            )
+    return result
+
+
+def version_evaluation(db: Session, version: ProposalVersion) -> PriceEvaluation | None:
+    """Profit and margin of exactly this proposal version (owner-only)."""
+    if version.estimate_id is None or version.cost_total is None:
+        return None
+    estimate = db.get(Estimate, version.estimate_id)
+    table = PriceTableData.model_validate(db.get(PriceTable, estimate.price_table_id).data)
+    free_share = Decimal("1") - table.overhead_share() - table.min_margin
+    min_price = round_money(version.cost_total / free_share, rounding="ROUND_CEILING")
+    return evaluate_price(table, version.cost_total, version.price, min_price)
+
+
+def version_sections(version: ProposalVersion) -> list[dict]:
+    return list(version.content.get("sections", []))
+
+
 def payload_hash(message: Message) -> str:
     payload = {
         "to": (message.to_addr or "").lower(),
@@ -113,8 +186,13 @@ def prepare_proposal(
     user_id: int | None = None,
     actor: str = "system",
     render_pdf: bool = True,
+    section_prices: dict[str, Decimal] | None = None,
 ) -> Message:
-    """Create a new proposal version for the latest estimate and the draft e-mail awaiting approval."""
+    """Create a new proposal version for the latest estimate and the draft e-mail awaiting approval.
+
+    Price options: `section_prices` (owner sets each section; 0 removes it, a code from the price table adds it),
+    or `price` (total, spread over sections proportionally), or nothing (recommended price).
+    """
     listing = db.get(Listing, listing_id)
     if listing is None:
         raise ProposalError("Заявка не найдена")
@@ -124,10 +202,22 @@ def prepare_proposal(
     if estimate is None:
         raise ProposalError("Сначала выполните расчёт стоимости")
     result = EstimateResult.model_validate(estimate.breakdown)
-    total = Decimal(price) if price is not None else result.recommended_price
-    if total <= 0:
-        raise ProposalError("Сумма должна быть больше нуля")
-    section_prices = distribute(result.sections, total)
+    table = PriceTableData.model_validate(db.get(PriceTable, estimate.price_table_id).data)
+    trips_cost = table.trip_cost * EstimateInput.model_validate(estimate.inputs).trips
+    if section_prices is not None:
+        priced = custom_sections(result.sections, table, section_prices)
+        if not priced:
+            raise ProposalError("Не осталось ни одного раздела")
+        total = sum((s.price for s in priced), Decimal("0"))
+    else:
+        total = Decimal(price) if price is not None else result.recommended_price
+        if total <= 0:
+            raise ProposalError("Сумма должна быть больше нуля")
+        priced = [
+            s.model_copy(update={"price": p})
+            for s, p in zip(result.sections, distribute(result.sections, total), strict=True)
+        ]
+    cost_total = sum((s.cost for s in priced), Decimal("0")) + trips_cost
 
     req = ss.load_sync(db, ss.Requisites)
     defaults = ss.load_sync(db, ss.ProposalDefaults)
@@ -141,8 +231,8 @@ def prepare_proposal(
         area_m2=listing.area_m2,
         intro=_fmt(defaults.intro_text, brand=req.brand, object=listing.title),
         sections=[
-            ProposalSection(code=s.code, name=s.name, description=s.description, stage=s.stage, price=p)
-            for s, p in zip(result.sections, section_prices, strict=True)
+            ProposalSection(code=s.code, name=s.name, description=s.description, stage=s.stage, price=s.price)
+            for s in priced
         ],
         total=total,
         duration=defaults.duration_text,
@@ -185,6 +275,7 @@ def prepare_proposal(
         docx_key=docx_key,
         pdf_key=pdf_key,
         estimate_id=estimate.id,
+        cost_total=cost_total,
         created_by_id=user_id,
     )
     db.add(version)

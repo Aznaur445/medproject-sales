@@ -108,6 +108,29 @@
     <div id="margin" style="min-height:22px;margin-top:6px"></div>
     <button type="submit" style="margin-top:8px">{{ 'Пересоздать КП' if versions else 'Создать КП' }}</button>
   </form>
+  <details style="margin-top:14px" {{ 'open' if versions }}>
+    <summary><b>Цены по разделам</b> <span class="small muted">— задать стоимость каждого раздела вручную</span></summary>
+    <form method="post" action="/listings/{{ listing.id }}/proposal">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="mode" value="sections">
+      <table>
+        {% for item in current_sections %}
+        <tr><td>{{ item.name }}</td>
+          <td><input name="sp_{{ item.code }}" value="{{ item.price|float|int }}" inputmode="numeric" size="10"></td></tr>
+        {% endfor %}
+        {% for r in addable %}
+        <tr class="muted"><td>+ {{ r.name }}</td><td><input name="sp_{{ r.code }}" placeholder="добавить" inputmode="numeric" size="10"></td></tr>
+        {% endfor %}
+      </table>
+      <p class="small muted">0 — убрать раздел. Пустое поле у дополнительных разделов — не добавлять.</p>
+      <button type="submit">Собрать КП с этими ценами</button>
+    </form>
+  </details>
+  {% if version_eval %}
+  <p class="small">Текущая версия: прибыль {{ money(version_eval.profit) }} · маржа
+    <b class="{{ 'bad' if version_eval.below_minimum else 'ok' }}">{{ '%.0f' % (version_eval.margin * 100) }}%</b>
+    {% if version_eval.below_minimum %} · <b class="bad">ниже минимальной цены</b>{% endif %}</p>
+  {% endif %}
   {% if versions %}
   <h4>Версии КП</h4>
   <table>

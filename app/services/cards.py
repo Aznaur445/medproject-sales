@@ -9,13 +9,20 @@ from app.core.config import get_settings
 from app.models import Estimate, Listing, Message, Organization, ProposalVersion, Thread
 from app.services import settings_store as ss
 from app.services.proposal_doc import money
-from app.services.proposals import message_amount, payload_hash
+from app.services.proposals import message_amount, payload_hash, version_evaluation, version_sections
 
 SCENARIO_NAMES = {"min": "мин", "base": "база", "max": "макс"}
 
 
 def short_hash(message: Message) -> str:
     return payload_hash(message)[:12]
+
+
+def _short(name: str) -> str:
+    """«Архитектурные решения (АР)» -> «АР» to keep the card compact."""
+    if name.endswith(")") and "(" in name:
+        return name[name.rindex("(") + 1 : -1]
+    return name[:40]
 
 
 def card_text(db: Session, message: Message) -> str:
@@ -41,6 +48,16 @@ def card_text(db: Session, message: Message) -> str:
             lines.append(f"Оценка: {listing.score}/100")
     if amount is not None:
         lines.append(f"\n💰 <b>Сумма КП: {money(amount)}</b>" + (f" (версия {version.version})" if version else ""))
+    if version:
+        for item in version_sections(version):
+            lines.append(
+                f"  {escape(item['code'])} {escape(_short(item['name']))}: {money(Decimal(str(item['price'])))}"
+            )
+        evaluation = version_evaluation(db, version)
+        if evaluation:
+            lines.append(f"При этой сумме: прибыль {money(evaluation.profit)} · маржа {evaluation.margin:.0%}")
+            if evaluation.below_minimum:
+                lines.append("⚠️ Ниже минимально допустимой цены для этого набора разделов")
     if estimate:
         parts = []
         for key in ("min", "base", "max"):
@@ -48,8 +65,6 @@ def card_text(db: Session, message: Message) -> str:
             if sc:
                 parts.append(f"{SCENARIO_NAMES[key]} {money(Decimal(sc['price']))} · маржа {Decimal(sc['margin']):.0%}")
         lines.append("Сценарии: " + "; ".join(parts))
-        if amount is not None and amount < estimate.min_price:
-            lines.append(f"⚠️ Ниже минимально допустимой цены ({money(estimate.min_price)})")
         for warning in estimate.breakdown.get("warnings", []):
             lines.append(f"⚠️ {escape(warning)}")
     lines.append(f"\n✉️ Кому: {escape(message.to_addr or '— не указан —')}")
@@ -85,6 +100,7 @@ def card_keyboard(db: Session, message: Message, *, confirm: bool = False) -> di
                 {"text": "✅ Согласовать", "callback_data": f"a:{mid}:ok:{h}"},
                 {"text": "✏️ Изменить сумму", "callback_data": f"a:{mid}:price:{h}"},
             ],
+            [{"text": "🧮 Цены по разделам", "callback_data": f"a:{mid}:sections:{h}"}],
             [
                 {"text": "📝 Редактировать текст", "callback_data": f"a:{mid}:text:{h}"},
                 {"text": "⏸ Отложить", "callback_data": f"a:{mid}:later:{h}"},

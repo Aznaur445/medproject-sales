@@ -175,12 +175,14 @@ def _parse_modifiers(text: str) -> list[dict[str, Any]]:
     return items
 
 
-def _parse_area_steps(text: str) -> list[dict[str, Decimal]]:
-    steps = []
+def _parse_curve(text: str) -> list[dict[str, Decimal]]:
+    points = []
     for line in _lines(text):
-        area, _, mult = line.partition("=")
-        steps.append({"from_m2": parse_decimal(area), "multiplier": parse_decimal(mult)})
-    return steps
+        area, sep, price = line.partition("=")
+        if not sep:
+            raise ValueError(f"Строка «{line}»: нужен формат «площадь = цена пакета»")
+        points.append({"area_m2": parse_decimal(area), "price": parse_decimal(price)})
+    return points
 
 
 def _pct(form, name: str) -> Decimal:
@@ -203,7 +205,8 @@ async def save_prices(request: Request, user: User = Depends(require_owner)):
                     "name": str(form.get(f"s{i}_name") or code),
                     "description": str(form.get(f"s{i}_description") or ""),
                     "stage": str(form.get(f"s{i}_stage")),
-                    "rate_per_m2": parse_decimal(str(form.get(f"s{i}_rate") or "0")),
+                    "weight": _pct(form, f"s{i}_weight") if str(form.get(f"s{i}_weight") or "").strip() else None,
+                    "rate_per_m2": parse_decimal(str(form.get(f"s{i}_rate") or "0")) or Decimal("0"),
                     "min_price": parse_decimal(str(form.get(f"s{i}_min") or "0")),
                     "cost_share": _pct(form, f"s{i}_cost"),
                     "default_selected": form.get(f"s{i}_default") == "1",
@@ -215,7 +218,7 @@ async def save_prices(request: Request, user: User = Depends(require_owner)):
             object_types=_parse_mapping(str(form.get("object_types") or "")),
             modifiers=_parse_modifiers(str(form.get("modifiers") or "")),
             regions=_parse_mapping(str(form.get("regions") or "")),
-            area_steps=_parse_area_steps(str(form.get("area_steps") or "")),
+            package_curve=_parse_curve(str(form.get("package_curve") or "")),
             trip_cost=parse_decimal(str(form.get("trip_cost") or "0")) or Decimal("0"),
             gip_share=_pct(form, "gip_share"),
             other_costs_share=_pct(form, "other_costs_share"),

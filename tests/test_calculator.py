@@ -2,36 +2,68 @@ from decimal import Decimal as D
 
 import pytest
 
-from app.services.calculator import EstimateInput, PriceTableData, calculate, distribute, evaluate_price
+from app.services.calculator import (
+    CurvePoint,
+    EstimateInput,
+    PriceTableData,
+    calculate,
+    distribute,
+    evaluate_price,
+    package_price,
+)
 from app.services.price_examples import EXAMPLE_PRICE_TABLE
 
 TABLE = PriceTableData.model_validate(EXAMPLE_PRICE_TABLE)
-MEDSCAN_SECTIONS = ["OBS", "TZ", "AR", "EOM", "VK", "OVIK", "SS", "TX", "POS", "OOS", "PB", "ODI", "PP"]
+STANDARD = ["AR", "EOM", "VK", "OVIK", "SS"]
 
 
-def test_example_table_reproduces_medscan_proposal():
-    """The example rates come from the 9 000 000 ₽ / 5 576.12 m² proposal: totals must match within 1%."""
-    result = calculate(TABLE, EstimateInput(area_m2=D("5576.12"), sections=MEDSCAN_SECTIONS))
-    assert abs(result.list_total - D("9000000")) / D("9000000") < D("0.01")
-    ar = next(s for s in result.sections if s.code == "AR")
-    assert ar.price == D("950000")
+def close(value: D, target: D, tolerance: D = D("0.02")) -> bool:
+    return abs(value - target) / target <= tolerance
+
+
+@pytest.mark.parametrize(
+    ("area", "target"),
+    [
+        ("100", "900000"),  # owner: 0.8–1.0 mln
+        ("800", "2000000"),  # owner: 2 mln
+        ("1500", "3500000"),  # owner: 3.5 mln
+    ],
+)
+def test_standard_package_follows_owner_curve(area, target):
+    result = calculate(TABLE, EstimateInput(area_m2=D(area)))
+    assert [s.code for s in result.sections] == STANDARD
+    assert close(result.list_total, D(target)), result.list_total
+
+
+def test_price_per_m2_falls_with_area():
+    per_m2 = [calculate(TABLE, EstimateInput(area_m2=D(a))).list_total / D(a) for a in ("100", "800", "3000", "8000")]
+    assert per_m2 == sorted(per_m2, reverse=True)
+
+
+def test_standard_weights_sum_to_one():
+    assert sum(s.weight for s in TABLE.sections if s.code in STANDARD) == D("1")
+
+
+def test_curve_interpolation_and_extrapolation():
+    curve = [CurvePoint(area_m2=D("100"), price=D("1000")), CurvePoint(area_m2=D("200"), price=D("1500"))]
+    assert package_price(curve, D("150")) == D("1250")
+    assert package_price(curve, D("300")) == D("2000")  # last slope continues
+    assert package_price(curve, D("50")) < D("1000")
 
 
 def test_scenarios_order_and_margin():
-    result = calculate(TABLE, EstimateInput(area_m2=D("800")))
-    s = result.scenarios
+    s = calculate(TABLE, EstimateInput(area_m2=D("800"))).scenarios
     assert s["min"].price <= s["base"].price < s["max"].price
     assert s["min"].margin >= TABLE.min_margin - D("0.01")
-    assert not s["base"].below_minimum
-    # profit = price - costs - gip - other - tax
     base = s["base"]
     assert base.profit == base.price - base.direct_cost - base.gip_cost - base.other_costs - base.tax
     assert base.tax == (base.price * D("0.07")).quantize(D("1"))
 
 
 def test_small_area_hits_minimum_prices():
-    result = calculate(TABLE, EstimateInput(area_m2=D("50")))
-    assert all(sp.price >= next(r.min_price for r in TABLE.sections if r.code == sp.code) for sp in result.sections)
+    result = calculate(TABLE, EstimateInput(area_m2=D("20"), sections=STANDARD + ["OOS"]))
+    mins = {r.code: r.min_price for r in TABLE.sections}
+    assert all(sp.price >= mins[sp.code] for sp in result.sections)
 
 
 def test_modifiers_increase_price():
@@ -39,6 +71,11 @@ def test_modifiers_increase_price():
     hard = calculate(TABLE, EstimateInput(area_m2=D("1000"), modifiers=["clean_rooms", "urgent"]))
     assert hard.list_total > plain.list_total
     assert hard.multiplier == D("1.5000")
+
+
+def test_legacy_rate_per_m2_still_works():
+    legacy = PriceTableData(sections=[{"code": "AR", "name": "АР", "rate_per_m2": D("200"), "min_price": D("0")}])
+    assert calculate(legacy, EstimateInput(area_m2=D("1000"))).list_total == D("200000")
 
 
 def test_unknown_section_or_modifier_rejected():

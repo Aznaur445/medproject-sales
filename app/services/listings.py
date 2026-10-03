@@ -160,6 +160,19 @@ def active_price_table(db: Session) -> PriceTable:
     table = db.execute(
         select(PriceTable).where(PriceTable.is_active.is_(True)).order_by(PriceTable.version.desc()).limit(1)
     ).scalar_one_or_none()
+    if table is not None and table.data.get("is_example") and not table.data.get("package_curve"):
+        # Older example without the area curve: replace with the current example as a new version.
+        table.is_active = False
+        upgraded = PriceTable(
+            name=table.name,
+            version=table.version + 1,
+            is_active=True,
+            data=PriceTableData.model_validate(EXAMPLE_PRICE_TABLE).model_dump(mode="json"),
+            comment="Пример обновлён: цена пакета зависит от площади.",
+        )
+        db.add(upgraded)
+        db.flush()
+        return upgraded
     if table is None:
         table = PriceTable(
             name="Основной прайс",

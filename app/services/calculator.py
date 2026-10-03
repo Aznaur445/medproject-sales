@@ -25,6 +25,8 @@ class SectionRate(BaseModel):
     name: str
     description: str = ""
     stage: Stage = "rd"
+    # Share of the standard package price (curve below). If empty, rate_per_m2 × area is used instead.
+    weight: Decimal | None = None
     rate_per_m2: Decimal = ZERO
     min_price: Decimal = ZERO
     cost_share: Decimal = Decimal("0.5")  # what subcontractors cost, share of the section price
@@ -37,9 +39,9 @@ class Modifier(BaseModel):
     multiplier: Decimal
 
 
-class AreaStep(BaseModel):
-    from_m2: Decimal
-    multiplier: Decimal
+class CurvePoint(BaseModel):
+    area_m2: Decimal
+    price: Decimal
 
 
 class PriceTableData(BaseModel):
@@ -48,7 +50,9 @@ class PriceTableData(BaseModel):
     object_types: dict[str, Decimal] = Field(default_factory=dict)  # name -> multiplier
     modifiers: list[Modifier] = Field(default_factory=list)
     regions: dict[str, Decimal] = Field(default_factory=dict)  # region -> multiplier, default 1
-    area_steps: list[AreaStep] = Field(default_factory=list)  # economy of scale, sorted by from_m2
+    # Price of the standard package (sections with weights summing to 1) by area: the bigger the object,
+    # the lower the price per m². Linear between points; power law below the first, last slope above.
+    package_curve: list[CurvePoint] = Field(default_factory=list)
     trip_cost: Decimal = Decimal("25000")
     gip_share: Decimal = Decimal("0.10")  # chief project engineer, share of price
     other_costs_share: Decimal = Decimal("0.03")
@@ -108,6 +112,7 @@ class PriceEvaluation(BaseModel):
 class EstimateResult(BaseModel):
     sections: list[SectionPrice]
     multiplier: Decimal
+    package_price: Decimal | None = None
     list_total: Decimal
     direct_cost: Decimal
     min_price: Decimal
@@ -120,12 +125,27 @@ def round_money(value: Decimal, step: Decimal = ROUND_TO, rounding: str = ROUND_
     return (value / step).quantize(Decimal("1"), rounding=rounding) * step
 
 
-def _area_multiplier(table: PriceTableData, area: Decimal) -> Decimal:
-    multiplier = Decimal("1")
-    for step in sorted(table.area_steps, key=lambda s: s.from_m2):
-        if area >= step.from_m2:
-            multiplier = step.multiplier
-    return multiplier
+SMALL_AREA_EXPONENT = 0.35  # below the first curve point price falls slower than area
+
+
+def package_price(curve: list[CurvePoint], area: Decimal) -> Decimal:
+    points = sorted(curve, key=lambda p: p.area_m2)
+    if not points:
+        raise ValueError("Не задана кривая цены пакета по площади")
+    first, last = points[0], points[-1]
+    if area <= first.area_m2:
+        ratio = float(area / first.area_m2)
+        return (first.price * Decimal(str(ratio**SMALL_AREA_EXPONENT))).quantize(Decimal("1"))
+    for left, right in zip(points, points[1:], strict=False):
+        if area <= right.area_m2:
+            share = (area - left.area_m2) / (right.area_m2 - left.area_m2)
+            return (left.price + (right.price - left.price) * share).quantize(Decimal("1"))
+    if len(points) >= 2:
+        prev = points[-2]
+        slope = (last.price - prev.price) / (last.area_m2 - prev.area_m2)
+    else:
+        slope = last.price / last.area_m2
+    return (last.price + slope * (area - last.area_m2)).quantize(Decimal("1"))
 
 
 def evaluate_price(table: PriceTableData, direct_cost: Decimal, price: Decimal, min_price: Decimal) -> PriceEvaluation:
@@ -148,7 +168,8 @@ def evaluate_price(table: PriceTableData, direct_cost: Decimal, price: Decimal, 
 
 def calculate(table: PriceTableData, data: EstimateInput) -> EstimateResult:
     warnings: list[str] = []
-    multiplier = _area_multiplier(table, data.area_m2)
+    multiplier = Decimal("1")
+    package = package_price(table.package_curve, data.area_m2) if table.package_curve else None
     if data.object_type:
         if data.object_type in table.object_types:
             multiplier *= table.object_types[data.object_type]
@@ -173,7 +194,10 @@ def calculate(table: PriceTableData, data: EstimateInput) -> EstimateResult:
     sections: list[SectionPrice] = []
     for code in codes:
         rate = by_code[code]
-        raw = rate.rate_per_m2 * data.area_m2 * multiplier
+        if rate.weight is not None and package is not None:
+            raw = package * rate.weight * multiplier
+        else:
+            raw = rate.rate_per_m2 * data.area_m2 * multiplier
         price = max(round_money(raw), rate.min_price)
         sections.append(
             SectionPrice(
@@ -205,6 +229,7 @@ def calculate(table: PriceTableData, data: EstimateInput) -> EstimateResult:
     return EstimateResult(
         sections=sections,
         multiplier=multiplier.quantize(Decimal("0.0001")),
+        package_price=package,
         list_total=list_total,
         direct_cost=direct_cost,
         min_price=min_price,

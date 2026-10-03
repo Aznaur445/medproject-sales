@@ -198,7 +198,7 @@ async def test_prices_save_creates_new_version(client, monkeypatch):
         "trip_cost": "20000",
         "object_types": "Клиника = 1,0\nСтоматология = 0,9",
         "modifiers": "urgent | Срочно | 1,2",
-        "area_steps": "0 = 1\n",
+        "package_curve": "100 = 900 000\n800 = 2000000",
         "regions": "",
     }
     resp = await client.post("/prices", data=data)
@@ -207,6 +207,7 @@ async def test_prices_save_creates_new_version(client, monkeypatch):
         active = db.execute(select(PriceTable).where(PriceTable.is_active.is_(True))).scalar_one()
         assert active.version == 2 and active.data["sections"][0]["cost_share"] == "0.4500"
         assert not active.data["is_example"]
+        assert active.data["package_curve"][1] == {"area_m2": "800", "price": "2000000"}
 
 
 async def test_settings_pause_and_optout(client, monkeypatch):

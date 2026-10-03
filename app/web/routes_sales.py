@@ -52,6 +52,8 @@ from app.services.proposals import (
     prepare_proposal,
     reject,
     update_text,
+    version_evaluation,
+    version_sections,
 )
 from app.web.auth import current_user, require_owner, verify_csrf
 from app.web.templating import render
@@ -218,6 +220,15 @@ def _listing_context(db, listing_id: int) -> dict[str, Any]:
     )
     rules = ss.load_sync(db, ss.SendingRules)
     amount = message_amount(db, draft) if draft else None
+    current_version = versions[0] if versions else None
+    if current_version:
+        current_sections = version_sections(current_version)
+    elif result:
+        current_sections = [{"code": x.code, "name": x.name, "price": str(x.price)} for x in result.sections]
+    else:
+        current_sections = []
+    used = {x["code"] for x in current_sections}
+    addable = [x for x in table.sections if x.code not in used]
     inputs = EstimateInput.model_validate(estimate.inputs) if estimate else None
     return {
         "listing": listing,
@@ -239,6 +250,9 @@ def _listing_context(db, listing_id: int) -> dict[str, Any]:
         "approvals": approvals,
         "contact_email": listing_email(db, listing),
         "requisites_ok": ss.load_sync(db, ss.Requisites).is_complete,
+        "current_sections": current_sections,
+        "addable": addable,
+        "version_eval": version_evaluation(db, current_version) if current_version else None,
     }
 
 
@@ -308,8 +322,19 @@ async def listing_proposal(request: Request, listing_id: int, user: User = Depen
     form = await request.form()
     raw = str(form.get("price") or "").strip()
     try:
-        price = parse_amount(raw) if raw else None
-        message = await in_db(lambda db: prepare_proposal(db, listing_id, price, user_id=user.id, actor="web"))
+        section_prices = None
+        if form.get("mode") == "sections":
+            section_prices = {}
+            for key, value in form.multi_items():
+                if key.startswith("sp_") and str(value).strip():
+                    text = str(value).strip()
+                    section_prices[key[3:]] = Decimal("0") if text in {"0", "-"} else parse_amount(text)
+        price = parse_amount(raw) if raw and section_prices is None else None
+        message = await in_db(
+            lambda db: prepare_proposal(
+                db, listing_id, price, user_id=user.id, actor="web", section_prices=section_prices
+            )
+        )
     except (ProposalError, ValueError) as exc:
         _flash(request, str(exc), "bad")
         return _back(listing_id, "#proposal")
