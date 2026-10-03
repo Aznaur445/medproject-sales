@@ -8,10 +8,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
 
-# postgresql-client: pg_dump/pg_restore for backups (major version matches the postgres:17 service).
+# postgresql-client-18 from the PostgreSQL repo: pg_dump/pg_restore must be at least the server's major version
+# (managed Timeweb database is PostgreSQL 18; a newer client also works with older servers).
 # libreoffice-writer-nogui + fonts: DOCX -> PDF conversion of proposals.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client libreoffice-writer-nogui \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" \
+       > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-18 libreoffice-writer-nogui \
        fonts-liberation fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
