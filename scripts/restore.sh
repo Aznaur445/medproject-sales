@@ -10,7 +10,12 @@ if [[ $# -lt 1 ]]; then
 fi
 echo "==> Останавливаю приложение (база и Redis продолжают работать)"
 docker compose stop api worker scheduler bot
-docker compose up -d postgres redis
+# Local database only when it is enabled (COMPOSE_PROFILES=localdb); a managed database is always running.
+if grep -qE '^COMPOSE_PROFILES=.*localdb' .env; then
+  docker compose up -d postgres redis
+else
+  docker compose up -d redis
+fi
 docker compose run --rm --no-deps worker python -m app.ops.backup restore "$1"
 echo "==> Применяю миграции и запускаю"
 docker compose up -d

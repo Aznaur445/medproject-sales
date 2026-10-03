@@ -87,19 +87,26 @@ if [[ ! -f .env ]]; then
     .env
   if [[ "$db_mode" == "2" ]]; then
     echo "Данные подключения смотрите в панели Timeweb: Базы данных → ваша база → Подключение."
-    db_host=$(ask "Хост базы (лучше приватный IP, если сервер и база в одной сети)")
+    db_host=$(ask "Адрес базы (приватный IP вида 192.168.x.x, если сервер и база в одной приватной сети)")
     db_port=$(ask "Порт" "5432")
     db_name=$(ask "Имя базы (создайте отдельную базу для сервиса, например medproject)" "medproject")
     db_user=$(ask "Пользователь")
     read -r -s -p "Пароль пользователя базы: " db_pass; echo
     db_url=$(DB_USER="$db_user" DB_PASS="$db_pass" DB_HOST="$db_host" DB_PORT="$db_port" DB_NAME="$db_name" \
       python3 - <<'PY'
+import ipaddress
 import os
 from urllib.parse import quote
 
 env = os.environ
 user, password, name = (quote(env[k], safe="") for k in ("DB_USER", "DB_PASS", "DB_NAME"))
-print(f"postgresql+psycopg://{user}:{password}@{env['DB_HOST']}:{env['DB_PORT']}/{name}?sslmode=require")
+try:
+    private = ipaddress.ip_address(env["DB_HOST"]).is_private
+except ValueError:
+    private = False
+# Public address: encryption is mandatory. Private network: use TLS if the server offers it.
+mode = "prefer" if private else "require"
+print(f"postgresql+psycopg://{user}:{password}@{env['DB_HOST']}:{env['DB_PORT']}/{name}?sslmode={mode}")
 PY
 )
     sed -i -e "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=|" .env
