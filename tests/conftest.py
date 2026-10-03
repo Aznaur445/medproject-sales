@@ -1,5 +1,6 @@
 import os
 import re
+import tempfile
 
 os.environ.update(
     ENV="test",
@@ -11,6 +12,10 @@ os.environ.update(
     REDIS_URL=os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15"),
     TELEGRAM_BOT_TOKEN="",
     TELEGRAM_OWNER_IDS="",
+    MAIL_USER="kp@project-med.test",
+    MAIL_APP_PASSWORD="app-password",
+    FILES_DIR=os.path.join(tempfile.gettempdir(), "medproject-test-files"),
+    PUBLIC_URL="https://crm.example.test",
 )
 
 import pytest  # noqa: E402

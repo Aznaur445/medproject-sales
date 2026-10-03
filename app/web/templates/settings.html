@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% set owner = user.role == 'owner' %}
+{% block content %}
+<h2>Настройки</h2>
+
+<div class="card" id="sending">
+  <h3>Отправка</h3>
+  <form method="post" action="/settings/pause" class="row" style="margin-bottom:12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if rules.paused %}
+      <span class="badge warn">⏸ Вся отправка на паузе</span>
+      <input type="hidden" name="paused" value="0"><button type="submit">▶️ Возобновить</button>
+    {% else %}
+      <span class="badge ok">Отправка включена</span>
+      <input type="hidden" name="paused" value="1"><button class="danger" type="submit">⏸ Пауза всей отправки</button>
+    {% endif %}
+  </form>
+  <form method="post" action="/settings/sending">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="paused" value="{{ '1' if rules.paused else '0' }}">
+    <div class="form-grid">
+      <div><label>Писем в день с ящика (макс.)</label><input type="number" name="daily_limit" min="1" max="100" value="{{ rules.daily_limit }}"></div>
+      <div><label>Не чаще 1 письма организации раз в N дней</label><input type="number" name="org_interval_days" min="0" value="{{ rules.org_interval_days }}"></div>
+      <div><label>Прогрев: писем в первый день</label><input type="number" name="warmup_start" min="1" value="{{ rules.warmup_start }}"></div>
+      <div><label>Прогрев: прибавка в день</label><input type="number" name="warmup_step" min="0" value="{{ rules.warmup_step }}"></div>
+      <div><label>Двойное подтверждение от суммы, ₽</label><input name="double_confirm_from" inputmode="numeric" value="{{ rules.double_confirm_from|int }}"></div>
+      <div><label>Окно отправки, с (час, МСК)</label><input type="number" name="send_window_start_hour" min="0" max="23" value="{{ rules.send_window_start_hour }}"></div>
+      <div><label>Окно отправки, до (час, МСК)</label><input type="number" name="send_window_end_hour" min="1" max="24" value="{{ rules.send_window_end_hour }}"></div>
+    </div>
+    <label class="check"><input type="checkbox" name="warmup_enabled" value="1" {{ 'checked' if rules.warmup_enabled }}> Постепенный прогрев ящика</label>
+    <label class="check"><input type="checkbox" name="work_days_only" value="1" {{ 'checked' if rules.work_days_only }}> Только в рабочие дни</label>
+    <label>Фраза об отписке (добавляется в каждое письмо)</label>
+    <textarea name="unsubscribe_text" rows="2">{{ rules.unsubscribe_text }}</textarea>
+    {% if owner %}<button type="submit" style="margin-top:8px">Сохранить</button>{% endif %}
+  </form>
+</div>
+
+<div class="card" id="requisites">
+  <h3>Реквизиты ИП</h3>
+  <p class="small muted">Попадают в КП и подпись письма. Хранятся в базе, в коде их нет.</p>
+  <form method="post" action="/settings/requisites">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      {% for name, title in [('brand', 'Бренд'), ('tagline', 'Подзаголовок'), ('legal_name', 'Полное наименование (ИП ФИО)'),
+        ('short_name', 'Краткое (ИП Фамилия И.О.)'), ('inn', 'ИНН'), ('ogrnip', 'ОГРНИП'), ('address', 'Адрес'),
+        ('bank_name', 'Банк'), ('bank_bik', 'БИК'), ('bank_account', 'Расчётный счёт'), ('bank_corr_account', 'Корр. счёт'),
+        ('phone', 'Телефон'), ('email', 'E-mail в КП'), ('website', 'Сайт'), ('city', 'Город')] %}
+      <div><label>{{ title }}</label><input name="{{ name }}" value="{{ req[name] }}"></div>
+      {% endfor %}
+    </div>
+    <label>Абзац про ОКВЭД (необязательно)</label><textarea name="okved_note" rows="2">{{ req.okved_note }}</textarea>
+    <label>Абзац про ГИП (необязательно)</label><textarea name="gip_note" rows="2">{{ req.gip_note }}</textarea>
+    {% if owner %}<button type="submit" style="margin-top:8px">Сохранить реквизиты</button>{% endif %}
+  </form>
+</div>
+
+<div class="card" id="proposal">
+  <h3>Тексты КП</h3>
+  <p class="small muted">В текстах можно использовать {brand} и {object}. Избегайте обещаний «100%», «гарантия лицензирования», «экономия до 30%»: закон о рекламе требует подтверждать такие утверждения.</p>
+  <form method="post" action="/settings/proposal">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Вступление</label><textarea name="intro_text" rows="4">{{ defaults.intro_text }}</textarea>
+    <div class="form-grid">
+      <div><label>Срок выполнения</label><input name="duration_text" value="{{ defaults.duration_text }}"></div>
+      <div><label>Срок действия КП, дней</label><input type="number" name="validity_days" min="1" value="{{ defaults.validity_days }}"></div>
+    </div>
+    <label>Варианты оплаты (по одному в строке)</label><textarea name="payment_options" rows="3">{{ defaults.payment_options|join('\n') }}</textarea>
+    <label>Примечание о НДС</label><textarea name="vat_note" rows="2">{{ defaults.vat_note }}</textarea>
+    <label>Гарантии качества</label><textarea name="quality_text" rows="3">{{ defaults.quality_text }}</textarea>
+    <label>Преимущества (по одному в строке)</label><textarea name="advantages" rows="4">{{ defaults.advantages|join('\n') }}</textarea>
+    <label>Подпись</label><textarea name="signature" rows="2">{{ defaults.signature }}</textarea>
+    {% if owner %}<button type="submit" style="margin-top:8px">Сохранить тексты</button>{% endif %}
+  </form>
+</div>
+{% endblock %}

@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     smtp_host: str = "smtp.mail.ru"
     smtp_port: int = 465
     smtp_ssl: bool = True
+    smtp_starttls: bool = True  # used only when smtp_ssl is false
     imap_host: str = "imap.mail.ru"
     imap_port: int = 993
     mail_user: str | None = None

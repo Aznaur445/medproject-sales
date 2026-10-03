@@ -33,3 +33,27 @@ th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line
 .table-wrap { overflow-x: auto; }
 code { font-size: 13px; word-break: break-all; }
 .qr { background: #fff; padding: 8px; border-radius: 8px; width: 220px; max-width: 100%; }
+textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+           color: var(--text); font: inherit; min-height: 90px; }
+select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+         color: var(--text); font-size: 16px; }
+input[type=checkbox] { width: auto; }
+.check { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; color: var(--text); font-size: 15px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.row > * { flex: 0 0 auto; }
+.form-grid { display: grid; gap: 0 14px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: var(--line); }
+.badge.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.badge.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.badge.bad { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.flash { padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; border: 1px solid var(--line); background: var(--card); }
+.flash.ok { border-color: var(--ok); } .flash.warn { border-color: var(--warn); } .flash.bad { border-color: var(--bad); }
+.btn.secondary, button.secondary { background: var(--line); color: var(--text); }
+button.danger { background: var(--bad); }
+.num { text-align: right; white-space: nowrap; }
+.sendbox { border: 2px solid var(--accent); }
+.letter { white-space: pre-wrap; background: var(--bg); padding: 12px; border-radius: 8px; font-size: 14px; }
+h3 { margin-top: 0; }
+.small { font-size: 13px; }
+.pause-banner { background: var(--warn); color: #fff; padding: 8px 16px; text-align: center; }
+table input, table select { padding: 6px 8px; font-size: 14px; }

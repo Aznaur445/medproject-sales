@@ -43,6 +43,8 @@ class Message(TimestampMixin, Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(128), unique=True)
     approval_id: Mapped[int | None] = mapped_column(ForeignKey("approval.id", ondelete="SET NULL"))
     sequence_step_id: Mapped[int | None] = mapped_column(ForeignKey("sequence_step.id", ondelete="SET NULL"))
+    proposal_version_id: Mapped[int | None] = mapped_column(ForeignKey("proposal_version.id", ondelete="SET NULL"))
+    organization_id: Mapped[int | None] = mapped_column(ForeignKey("organization.id", ondelete="SET NULL"), index=True)
     classification: Mapped[str | None] = mapped_column(String(32))
     classification_confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)

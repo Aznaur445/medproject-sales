@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% set owner = user.role == 'owner' %}
+{% block content %}
+<h2>Расценки <span class="small muted">версия {{ row.version }}</span></h2>
+{% if table.is_example %}<div class="flash warn">Сейчас действуют расценки-пример: ставки за м² восстановлены по вашему КП для «Медскан» (9 млн ₽ / 5 576 м²). Доли себестоимости, ГИП и маржа условные. Замените их своими.</div>{% endif %}
+<form method="post" action="/prices">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="card table-wrap">
+    <h3>Разделы</h3>
+    <table>
+      <tr><th>Код</th><th>Название</th><th>Стадия</th><th>₽/м²</th><th>Мин. цена</th><th>Себест., %</th><th>По умолч.</th><th>Удалить</th></tr>
+      {% for s in table.sections %}{% set i = loop.index0 %}
+      <tr>
+        <td><input name="s{{ i }}_code" value="{{ s.code }}" size="5"></td>
+        <td><input name="s{{ i }}_name" value="{{ s.name }}" size="30"><input name="s{{ i }}_description" value="{{ s.description }}" size="30" placeholder="описание для КП" class="small" style="margin-top:4px"></td>
+        <td><select name="s{{ i }}_stage">{% for st, t in [('pre', 'Предпроект'), ('pd', 'ПД'), ('rd', 'РД'), ('extra', 'Доп.')] %}<option value="{{ st }}" {{ 'selected' if s.stage == st }}>{{ t }}</option>{% endfor %}</select></td>
+        <td><input name="s{{ i }}_rate" value="{{ s.rate_per_m2 }}" size="6" inputmode="decimal"></td>
+        <td><input name="s{{ i }}_min" value="{{ s.min_price|int }}" size="8" inputmode="numeric"></td>
+        <td><input name="s{{ i }}_cost" value="{{ (s.cost_share * 100)|round(1) }}" size="4" inputmode="decimal"></td>
+        <td><input type="checkbox" name="s{{ i }}_default" value="1" {{ 'checked' if s.default_selected }}></td>
+        <td><input type="checkbox" name="s{{ i }}_delete" value="1"></td>
+      </tr>
+      {% endfor %}
+      {% for j in range(empty_rows) %}{% set i = table.sections|length + j %}
+      <tr>
+        <td><input name="s{{ i }}_code" size="5" placeholder="новый"></td>
+        <td><input name="s{{ i }}_name" size="30"><input name="s{{ i }}_description" size="30" placeholder="описание для КП" class="small" style="margin-top:4px"></td>
+        <td><select name="s{{ i }}_stage"><option value="rd">РД</option><option value="pd">ПД</option><option value="pre">Предпроект</option><option value="extra">Доп.</option></select></td>
+        <td><input name="s{{ i }}_rate" size="6"></td><td><input name="s{{ i }}_min" size="8"></td>
+        <td><input name="s{{ i }}_cost" size="4" value="50"></td><td><input type="checkbox" name="s{{ i }}_default" value="1"></td><td></td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="small muted">Цена раздела = ставка × площадь × коэффициенты, но не меньше минимальной. «Себест., %» — сколько от цены раздела уходит субподрядчику.</p>
+  </div>
+  <div class="card">
+    <h3>Себестоимость и маржа</h3>
+    <div class="form-grid">
+      <div><label>ГИП, % от цены</label><input name="gip_share" value="{{ (table.gip_share * 100)|round(2) }}"></div>
+      <div><label>Прочие расходы, % от цены</label><input name="other_costs_share" value="{{ (table.other_costs_share * 100)|round(2) }}"></div>
+      <div><label>Налог, % (УСН 6% + 1% свыше 300 тыс.)</label><input name="tax_rate" value="{{ (table.tax_rate * 100)|round(2) }}"></div>
+      <div><label>Целевая маржа, %</label><input name="target_margin" value="{{ (table.target_margin * 100)|round(2) }}"></div>
+      <div><label>Минимальная маржа, %</label><input name="min_margin" value="{{ (table.min_margin * 100)|round(2) }}"></div>
+      <div><label>Сценарий «макс»: надбавка, %</label><input name="max_uplift" value="{{ (table.max_uplift * 100)|round(2) }}"></div>
+      <div><label>Стоимость выезда, ₽</label><input name="trip_cost" value="{{ table.trip_cost|int }}"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Коэффициенты</h3>
+    <label>Типы объектов (строка: «Название = коэффициент»)</label>
+    <textarea name="object_types" rows="6">{% for k, v in table.object_types.items() %}{{ k }} = {{ v }}
+{% endfor %}</textarea>
+    <label>Усложнения (строка: «код | Название | коэффициент»)</label>
+    <textarea name="modifiers" rows="5">{% for m in table.modifiers %}{{ m.code }} | {{ m.name }} | {{ m.multiplier }}
+{% endfor %}</textarea>
+    <label>Регионы (строка: «Регион = коэффициент», остальные 1,0)</label>
+    <textarea name="regions" rows="3">{% for k, v in table.regions.items() %}{{ k }} = {{ v }}
+{% endfor %}</textarea>
+    <label>Масштаб по площади (строка: «от_м² = коэффициент»)</label>
+    <textarea name="area_steps" rows="3">{% for s in table.area_steps %}{{ s.from_m2 }} = {{ s.multiplier }}
+{% endfor %}</textarea>
+    <label class="check"><input type="checkbox" name="is_example" value="1" {{ 'checked' if table.is_example }}> Это расценки-пример (показывать предупреждение)</label>
+    <label>Комментарий к версии</label><input name="comment" placeholder="что поменяли">
+    {% if owner %}<button type="submit" style="margin-top:10px">Сохранить новую версию</button>{% endif %}
+  </div>
+</form>
+{% endblock %}

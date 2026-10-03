@@ -78,7 +78,7 @@ class Proposal(TimestampMixin, Base):
     estimate_id: Mapped[int | None] = mapped_column(ForeignKey("estimate.id", ondelete="SET NULL"))
     template_name: Mapped[str] = mapped_column(String(200), default="default")
     status: Mapped[ProposalStatus] = mapped_column(String(32), default=ProposalStatus.DRAFT)
-    current_version: Mapped[int] = mapped_column(Integer, default=1)
+    current_version: Mapped[int] = mapped_column(Integer, default=0)
 
     versions: Mapped[list["ProposalVersion"]] = relationship(order_by="ProposalVersion.version")
 
@@ -95,6 +95,7 @@ class ProposalVersion(Base):
     cover_letter: Mapped[str | None] = mapped_column(Text)
     docx_key: Mapped[str | None] = mapped_column(String(500))
     pdf_key: Mapped[str | None] = mapped_column(String(500))
+    estimate_id: Mapped[int | None] = mapped_column(ForeignKey("estimate.id", ondelete="SET NULL"))
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("user.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

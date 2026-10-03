@@ -9,8 +9,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH"
 
 # postgresql-client: pg_dump/pg_restore for backups (major version matches the postgres:17 service).
+# libreoffice-writer-nogui + fonts: DOCX -> PDF conversion of proposals.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client \
+    && apt-get install -y --no-install-recommends postgresql-client libreoffice-writer-nogui \
+       fonts-liberation fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv==0.8.17

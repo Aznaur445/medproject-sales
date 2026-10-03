@@ -1,6 +1,7 @@
 """Alerts and notifications to the owner's Telegram via Bot API (plain HTTP, usable from any process)."""
 
 import time
+from pathlib import Path
 
 import httpx
 
@@ -38,6 +39,46 @@ def send_owner_message(text: str, *, dedup_key: str | None = None, dedup_seconds
         except httpx.HTTPError as exc:
             log.error("telegram_send_failed", error=type(exc).__name__)
     return delivered
+
+
+def telegram_call(method: str, payload: dict) -> list[dict]:
+    """Call a Bot API method for every owner chat (chat_id is filled in). Returns successful results."""
+    settings = get_settings()
+    if settings.telegram_bot_token is None or not settings.telegram_owner_ids:
+        log.warning("telegram_not_configured", method=method)
+        return []
+    url = f"https://api.telegram.org/bot{settings.telegram_bot_token.get_secret_value()}/{method}"
+    results = []
+    for chat_id in settings.telegram_owner_ids:
+        try:
+            resp = httpx.post(url, json={**payload, "chat_id": chat_id}, timeout=15)
+            resp.raise_for_status()
+            results.append(resp.json().get("result", {}))
+        except httpx.HTTPError as exc:
+            log.error("telegram_call_failed", method=method, error=type(exc).__name__)
+    return results
+
+
+def telegram_send_document(path: Path, filename: str, caption: str = "") -> bool:
+    settings = get_settings()
+    if settings.telegram_bot_token is None or not settings.telegram_owner_ids:
+        return False
+    url = f"https://api.telegram.org/bot{settings.telegram_bot_token.get_secret_value()}/sendDocument"
+    ok = False
+    for chat_id in settings.telegram_owner_ids:
+        try:
+            with path.open("rb") as fh:
+                resp = httpx.post(
+                    url,
+                    data={"chat_id": str(chat_id), "caption": caption[:1000]},
+                    files={"document": (filename, fh)},
+                    timeout=60,
+                )
+            resp.raise_for_status()
+            ok = True
+        except (httpx.HTTPError, OSError) as exc:
+            log.error("telegram_document_failed", error=type(exc).__name__)
+    return ok
 
 
 def alert(title: str, details: str = "", *, dedup_key: str | None = None) -> bool:

@@ -9,7 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.core.config import get_settings
 from app.core.db import get_async_engine
 from app.core.logging import configure_logging, get_logger
-from app.web import routes_auth, routes_main
+from app.web import routes_auth, routes_main, routes_sales, routes_settings
 from app.web.auth import LoginRequired
 
 log = get_logger(__name__)
@@ -57,6 +57,8 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "web" / "static"), name="static")
     app.include_router(routes_main.router)
     app.include_router(routes_auth.router)
+    app.include_router(routes_sales.router)
+    app.include_router(routes_settings.router)
     return app
 
 

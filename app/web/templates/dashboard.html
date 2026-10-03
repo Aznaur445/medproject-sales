@@ -2,7 +2,11 @@
 {% block content %}
 <h2>Сводка</h2>
 <div class="grid">
-  <div class="card"><div class="muted">Заявок в базе</div><div class="stat">{{ listings }}</div></div>
+  <div class="card"><div class="muted">Заявок в базе</div><div class="stat"><a href="/listings">{{ listings }}</a></div></div>
+  <div class="card"><div class="muted">КП ждут согласования</div><div class="stat {{ 'bad' if pending }}">{{ pending }}</div></div>
+  <div class="card"><div class="muted">В очереди отправки</div><div class="stat">{{ queued }}</div>
+    {% if failed %}<div class="small bad">ошибок: {{ failed }}</div>{% endif %}
+    {% if rules.paused %}<div class="small" style="color:var(--warn)">⏸ отправка на паузе</div>{% endif %}</div>
   <div class="card">
     <div class="muted">Состояние сервиса</div>
     <div class="stat {{ 'ok' if health.status == 'ok' else 'bad' }}">{{ 'Работает' if health.status == 'ok' else 'Есть сбои' }}</div>
@@ -19,5 +23,5 @@
     {% endfor %}
   </table>
 </div>
-<p class="muted">Этап 1: фундамент. Заявки, КП и воронка появятся на следующих этапах.</p>
+
 {% endblock %}

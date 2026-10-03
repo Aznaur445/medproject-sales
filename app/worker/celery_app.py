@@ -7,7 +7,9 @@ from app.core.logging import configure_logging
 
 settings = get_settings()
 
-celery = Celery("medproject", broker=settings.redis_url, backend=None, include=["app.worker.tasks"])
+celery = Celery(
+    "medproject", broker=settings.redis_url, backend=None, include=["app.worker.tasks", "app.worker.tasks_sales"]
+)
 celery.conf.update(
     timezone=settings.timezone,
     enable_utc=True,
@@ -24,6 +26,8 @@ celery.conf.update(
     beat_schedule={
         "worker-heartbeat": {"task": "app.worker.tasks.worker_heartbeat", "schedule": 60.0},
         "watchdog": {"task": "app.worker.tasks.watchdog", "schedule": 300.0},
+        "dispatch-queued": {"task": "app.worker.tasks_sales.dispatch_queued", "schedule": 300.0},
+        "due-reminders": {"task": "app.worker.tasks_sales.due_reminders", "schedule": 300.0},
         # Times are in settings.timezone (Europe/Moscow by default).
         "daily-backup": {"task": "app.worker.tasks.daily_backup", "schedule": crontab(hour=3, minute=30)},
         "backup-watchdog": {"task": "app.worker.tasks.backup_watchdog", "schedule": crontab(hour=9, minute=7)},

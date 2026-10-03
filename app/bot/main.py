@@ -10,8 +10,10 @@ from typing import Any
 
 from aiogram import BaseMiddleware, Bot, Dispatcher, Router
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.types import Message, TelegramObject
 
+from app.bot import approvals
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.redis import get_redis
@@ -44,8 +46,13 @@ class WhitelistMiddleware(BaseMiddleware):
 async def cmd_start(message: Message) -> None:
     await message.answer(
         "Бот МедПроект подключён.\n"
-        "Сюда будут приходить новые заявки, КП на согласование и уведомления о сбоях.\n"
-        "Команды: /health — состояние сервиса."
+        "Сюда приходят КП на согласование, новые заявки и уведомления о сбоях.\n\n"
+        "/today — что требует внимания сегодня\n"
+        "/pipeline — воронка\n"
+        "/stats — статистика за неделю\n"
+        "/add — добавить заявку (ссылка или описание)\n"
+        "/pause, /resume — остановить или возобновить всю отправку\n"
+        "/health — состояние сервиса"
     )
 
 
@@ -80,9 +87,10 @@ async def main() -> None:
         await heartbeat_loop()
         return
     bot = Bot(settings.telegram_bot_token.get_secret_value())
-    dp = Dispatcher()
+    dp = Dispatcher(storage=RedisStorage.from_url(settings.redis_url))
     dp.update.outer_middleware(WhitelistMiddleware(set(settings.telegram_owner_ids)))
     dp.include_router(router)
+    dp.include_router(approvals.router)
     hb = asyncio.create_task(heartbeat_loop())
     try:
         await dp.start_polling(bot, handle_signals=True)

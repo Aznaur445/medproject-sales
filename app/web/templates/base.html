@@ -13,6 +13,10 @@
   <strong>{{ app_name }}</strong>
   <nav>
     <a href="/">Сводка</a>
+    <a href="/listings">Заявки</a>
+    <a href="/prices">Расценки</a>
+    <a href="/settings">Настройки</a>
+    <a href="/optouts">Отказы</a>
     <a href="/audit">Журнал</a>
   </nav>
   <form method="post" action="/logout">
@@ -22,6 +26,7 @@
 </header>
 {% endif %}
 <main>
+{% if flash %}<div class="flash {{ flash.kind }}">{{ flash.text }}</div>{% endif %}
 {% block content %}{% endblock %}
 </main>
 </body>

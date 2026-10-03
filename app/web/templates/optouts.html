@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Реестр отказов</h2>
+<p class="muted">Адресам и доменам из этого списка сервис не пишет никогда. Неотправленные письма им отменяются автоматически.</p>
+{% if user.role == 'owner' %}
+<form method="post" action="/optouts" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="form-grid">
+    <div><label>E-mail или домен</label><input name="value" required placeholder="name@clinic.ru или clinic.ru"></div>
+    <div><label>Причина</label><input name="reason" placeholder="попросили не писать"></div>
+  </div>
+  <button type="submit" style="margin-top:8px">Добавить</button>
+</form>
+{% endif %}
+<div class="card table-wrap">
+  <table>
+    <tr><th>Адрес / домен</th><th>Откуда</th><th>Причина</th><th>Когда</th><th></th></tr>
+    {% for r in rows %}
+    <tr><td>{{ r.value }}</td><td>{{ {'reply_stop': 'ответ «СТОП»', 'link': 'ссылка отписки', 'manual': 'вручную'}.get(r.source, r.source) }}</td>
+      <td class="small">{{ r.reason or '' }}</td><td class="small">{{ to_local(r.created_at) }}</td>
+      <td>{% if user.role == 'owner' %}<form method="post" action="/optouts/{{ r.id }}/delete" class="row small">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="check small"><input type="checkbox" required> снова можно писать</label>
+        <button class="link" type="submit">удалить</button></form>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">Пусто</td></tr>{% endfor %}
+  </table>
+</div>
+{% endblock %}

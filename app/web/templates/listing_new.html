@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Новая заявка</h2>
+{% if errors %}<div class="flash bad">{% for e in errors %}<div>{{ e }}</div>{% endfor %}</div>{% endif %}
+<form method="post" action="/listings/new" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label>Название / объект *</label>
+  <input name="title" required value="{{ form.title or '' }}" placeholder="Реконструкция медцентра на ул. ...">
+  <div class="form-grid">
+    <div><label>Заказчик (организация) *</label><input name="customer_name" required value="{{ form.customer_name or '' }}"></div>
+    <div><label>ИНН заказчика</label><input name="customer_inn" inputmode="numeric" value="{{ form.customer_inn or '' }}"></div>
+    <div><label>Регион</label><input name="region" value="{{ form.region or '' }}"></div>
+    <div><label>Адрес объекта</label><input name="address" value="{{ form.address or '' }}"></div>
+    <div><label>Тип объекта</label>
+      <select name="object_type"><option value="">—</option>
+        {% for t in object_types %}<option {{ 'selected' if form.object_type == t }}>{{ t }}</option>{% endfor %}
+      </select></div>
+    <div><label>Площадь, м²</label><input name="area_m2" inputmode="decimal" value="{{ form.area_m2 or '' }}"></div>
+    <div><label>Срок подачи</label><input type="datetime-local" name="deadline_at" value="{{ form.deadline_at or '' }}"></div>
+    <div><label>Ссылка на заявку</label><input name="url" type="url" value="{{ form.url or '' }}"></div>
+  </div>
+  <label>Описание / ТЗ (кратко)</label>
+  <textarea name="description">{{ form.description or '' }}</textarea>
+  <div class="form-grid">
+    <div><label>Рабочий e-mail для заявок</label><input name="contact_email" type="email" value="{{ form.contact_email or '' }}"></div>
+    <div><label>Где опубликован e-mail (обязательно, если e-mail указан)</label>
+      <input name="contact_source" value="{{ form.contact_source or '' }}" placeholder="https://сайт-заказчика/закупки"></div>
+  </div>
+  <p class="small muted">Пишем только на рабочие адреса, опубликованные для заказов и закупок. Источник хранится по 152-ФЗ.</p>
+  <button type="submit">Добавить</button>
+</form>
+{% endblock %}

@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% set owner = user.role == 'owner' %}
+{% block content %}
+<p class="small"><a href="/listings">← Все заявки</a></p>
+<h2>#{{ listing.id }} {{ listing.title }}</h2>
+<p><span class="badge">{{ status_names.get(listing.status, listing.status) }}</span>
+{% if listing.exclusion_reason %} <span class="badge bad">{{ listing.exclusion_reason }}</span>{% endif %}
+{% if listing.url %} · <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer">источник</a>{% endif %}</p>
+
+{% if not requisites_ok %}
+<div class="flash warn">Заполните реквизиты ИП в <a href="/settings">настройках</a>: без них КП будет без ИНН и контактов.</div>
+{% endif %}
+{% if rules.paused %}
+<div class="flash warn">⏸ Вся отправка на паузе. Согласованные письма ждут в очереди. <a href="/settings#sending">Настройки</a></div>
+{% endif %}
+
+<div class="card">
+  <h3>Данные заявки</h3>
+  <table>
+    <tr><td class="muted">Заказчик</td><td>{{ org.name if org else '—' }}{% if org and org.inn %} · ИНН {{ org.inn }}{% endif %}</td></tr>
+    <tr><td class="muted">Объект</td><td>{{ listing.object_type or '—' }}{% if listing.area_m2 %} · {{ '{:,.1f}'.format(listing.area_m2).replace(',', ' ') }} м²{% endif %}</td></tr>
+    <tr><td class="muted">Адрес</td><td>{{ listing.address or listing.region or '—' }}</td></tr>
+    <tr><td class="muted">Срок подачи</td><td>{{ to_local(listing.deadline_at) or '—' }}</td></tr>
+    <tr><td class="muted">Контакты</td><td>
+      {% for c in channels %}<div>{{ c.kind }}: {{ c.value }} <span class="small muted">· источник: {{ c.source_url or '—' }}</span></div>
+      {% else %}—{% endfor %}</td></tr>
+    {% if listing.description %}<tr><td class="muted">Описание</td><td class="small">{{ listing.description }}</td></tr>{% endif %}
+  </table>
+  {% if owner %}
+  <form method="post" action="/listings/{{ listing.id }}/status" class="row" style="margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <select name="status" style="width:auto">
+      {% for key, name in status_names.items() %}<option value="{{ key }}" {{ 'selected' if listing.status == key }}>{{ name }}</option>{% endfor %}
+    </select>
+    <input name="reason" placeholder="причина (для «Проиграна»)" style="width:auto">
+    <button class="secondary" type="submit">Сменить статус</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card" id="estimate">
+  <h3>Расчёт стоимости</h3>
+  {% if table.is_example %}<div class="flash warn small">Расценки-пример по КП «Медскан». Замените их своими в разделе <a href="/prices">«Расценки»</a>.</div>{% endif %}
+  {% if owner %}
+  <form method="post" action="/listings/{{ listing.id }}/estimate">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      <div><label>Площадь, м²</label><input name="area_m2" inputmode="decimal" required
+        value="{{ inputs.area_m2 if inputs else (listing.area_m2 or '') }}"></div>
+      <div><label>Тип объекта</label><select name="object_type"><option value="">—</option>
+        {% set cur_type = inputs.object_type if inputs else listing.object_type %}
+        {% for t in table.object_types %}<option {{ 'selected' if cur_type == t }}>{{ t }}</option>{% endfor %}</select></div>
+      <div><label>Выездов на объект</label><input name="trips" type="number" min="0" value="{{ inputs.trips if inputs else 1 }}"></div>
+      <div><label>Регион (коэффициент)</label><select name="region"><option value="">—</option>
+        {% for r in table.regions %}<option {{ 'selected' if inputs and inputs.region == r }}>{{ r }}</option>{% endfor %}</select></div>
+    </div>
+    <label>Разделы</label>
+    <div class="form-grid">
+    {% for s in table.sections %}
+      {% set checked = (s.code in inputs.sections) if inputs and inputs.sections is not none else s.default_selected %}
+      <label class="check"><input type="checkbox" name="sections" value="{{ s.code }}" {{ 'checked' if checked }}> {{ s.name }}</label>
+    {% endfor %}
+    </div>
+    <label>Коэффициенты</label>
+    <div class="form-grid">
+    {% for m in table.modifiers %}
+      <label class="check"><input type="checkbox" name="modifiers" value="{{ m.code }}" {{ 'checked' if inputs and m.code in inputs.modifiers }}> {{ m.name }} (×{{ m.multiplier }})</label>
+    {% endfor %}
+    </div>
+    <button type="submit" style="margin-top:10px">Рассчитать</button>
+  </form>
+  {% endif %}
+
+  {% if result %}
+  <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+  {% for w in result.warnings %}<p class="small" style="color:var(--warn)">⚠️ {{ w }}</p>{% endfor %}
+  <div class="table-wrap"><table>
+    <tr><th>Раздел</th><th class="num">Цена</th><th class="num">Себестоимость</th></tr>
+    {% for s in result.sections %}
+    <tr><td>{{ s.name }}</td><td class="num">{{ money(s.price) }}</td><td class="num muted">{{ money(s.cost) }}</td></tr>
+    {% endfor %}
+    <tr><td><b>По прайсу</b> <span class="small muted">(коэфф. ×{{ result.multiplier }})</span></td><td class="num"><b>{{ money(result.list_total) }}</b></td>
+        <td class="num muted">{{ money(result.direct_cost) }} <span class="small">вкл. выезды</span></td></tr>
+  </table></div>
+  <div class="grid" style="margin-top:12px">
+    {% for key, title in [('min', 'Минимум'), ('base', 'Рекомендуемая'), ('max', 'Максимум')] %}
+    {% set sc = result.scenarios[key] %}
+    <div class="card" style="margin:0">
+      <div class="muted small">{{ title }}</div>
+      <div class="stat" style="font-size:22px">{{ money(sc.price) }}</div>
+      <div class="small">прибыль {{ money(sc.profit) }} · маржа {{ '%.0f' % (sc.margin * 100) }}%</div>
+      <div class="small muted">ГИП {{ money(sc.gip_cost) }} · налог {{ money(sc.tax) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="small muted">Себестоимость, маржа и ставки видите только вы: в КП попадает только итоговая цена по разделам.</p>
+  {% endif %}
+</div>
+
+{% if result and owner and listing.status != 'excluded' %}
+<div class="card" id="proposal">
+  <h3>Подготовить КП</h3>
+  <form method="post" action="/listings/{{ listing.id }}/proposal">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Сумма КП, ₽ (пусто = рекомендуемая {{ money(result.recommended_price) }})</label>
+    <input name="price" inputmode="numeric" placeholder="{{ result.recommended_price|int }}"
+           hx-get="/listings/{{ listing.id }}/price-check" hx-trigger="input changed delay:300ms" hx-target="#margin" hx-include="this">
+    <div id="margin" style="min-height:22px;margin-top:6px"></div>
+    <button type="submit" style="margin-top:8px">{{ 'Пересоздать КП' if versions else 'Создать КП' }}</button>
+  </form>
+  {% if versions %}
+  <h4>Версии КП</h4>
+  <table>
+    {% for v in versions %}
+    <tr><td>v{{ v.version }}</td><td class="num">{{ money(v.price) }}</td><td class="small">{{ to_local(v.created_at) }}</td>
+      <td>{% if v.pdf_key %}<a href="/files/{{ v.pdf_key }}">PDF</a> · {% endif %}<a href="/files/{{ v.docx_key }}">DOCX</a></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if draft %}
+<div class="card sendbox" id="approval">
+  <h3>Будет отправлено</h3>
+  <table>
+    <tr><td class="muted">Статус</td><td><span class="badge {{ 'warn' if draft.status == 'pending_approval' else 'ok' }}">{{ message_status_names.get(draft.status, draft.status) }}</span>
+      {% if draft.error %}<span class="small muted"> · {{ draft.error }}</span>{% endif %}</td></tr>
+    <tr><td class="muted">С адреса</td><td>{{ draft.from_addr or '⚠️ почта не настроена (MAIL_USER)' }}</td></tr>
+    <tr><td class="muted">Кому</td><td>{{ draft.to_addr or '⚠️ не указан' }}</td></tr>
+    <tr><td class="muted">Сумма</td><td><b>{{ money(draft_amount) if draft_amount else '—' }}</b></td></tr>
+    <tr><td class="muted">Вложение</td><td>{% for a in draft.attachments %}<a href="/files/{{ a.key }}">{{ a.name }}</a>{% endfor %}</td></tr>
+  </table>
+  {% if owner and draft.status == 'pending_approval' %}
+  <form method="post" action="/messages/{{ draft.id }}/edit">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Кому</label><input name="to_addr" type="email" value="{{ draft.to_addr or '' }}">
+    <label>Тема</label><input name="subject" value="{{ draft.subject or '' }}">
+    <label>Текст письма</label><textarea name="body" rows="16">{{ draft.body_text or '' }}</textarea>
+    <button class="secondary" type="submit" style="margin-top:8px">Сохранить изменения</button>
+  </form>
+  <form method="post" action="/messages/{{ draft.id }}/approve" style="margin-top:16px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="expected_hash" value="{{ draft_hash }}">
+    {% if needs_confirm %}
+    <label class="check"><input type="checkbox" name="confirm" value="1" required>
+      Подтверждаю сумму {{ money(draft_amount) }} и адресата {{ draft.to_addr }}</label>
+    {% endif %}
+    <button type="submit">✅ Согласовано: отправить</button>
+  </form>
+  <div class="row" style="margin-top:10px">
+    <form method="post" action="/messages/{{ draft.id }}/postpone"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary" type="submit">⏸ Отложить на сутки</button></form>
+    <form method="post" action="/messages/{{ draft.id }}/reject"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="reason" value="отклонено в панели"><button class="danger" type="submit">❌ Отклонить</button></form>
+  </div>
+  {% else %}
+  <p><b>{{ draft.subject }}</b></p>
+  <div class="letter">{{ draft.body_text }}</div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if messages %}
+<div class="card">
+  <h3>История переписки</h3>
+  <table>
+    {% for m in messages %}
+    <tr>
+      <td class="small">{{ to_local(m.sent_at or m.received_at or m.created_at) }}</td>
+      <td>{{ '→' if m.direction == 'outbound' else '←' }} {{ m.subject or '' }}
+        {% if m.error %}<div class="small muted">{{ m.error }}</div>{% endif %}</td>
+      <td><span class="badge {{ 'ok' if m.status == 'sent' else ('bad' if m.status == 'failed' else '') }}">{{ message_status_names.get(m.status, m.status) }}</span>
+        {% if owner and m.status == 'failed' %}
+        <form method="post" action="/messages/{{ m.id }}/retry" style="display:inline"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="link" type="submit">повторить</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% if approvals %}
+  <h4>Согласования</h4>
+  <table class="small">
+    {% for a in approvals %}
+    <tr><td>{{ to_local(a.created_at) }}</td><td>{{ {'approved': 'согласовано', 'rejected': 'отклонено', 'postponed': 'отложено'}.get(a.decision, a.decision) }}{% if a.double_confirmed %} (двойное подтверждение){% endif %}</td>
+      <td>{{ a.channel }}</td><td class="num">{{ money(a.amount) if a.amount else '' }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

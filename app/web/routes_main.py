@@ -4,7 +4,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
-from app.models import AuditLog, Listing, User
+from app.models import AuditLog, Listing, Message, User
+from app.models.enums import MessageStatus
+from app.services import settings_store as ss
 from app.services.health import check_db, full_health
 from app.web.auth import current_user
 from app.web.templating import render
@@ -34,7 +36,34 @@ async def health_db():
 @router.get("/")
 async def dashboard(request: Request, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     listings = (await db.execute(select(func.count()).select_from(Listing))).scalar_one()
-    return render(request, "dashboard.html", user=user, listings=listings, health=await full_health())
+    pending = (
+        await db.execute(
+            select(func.count()).select_from(Message).where(Message.status == MessageStatus.PENDING_APPROVAL)
+        )
+    ).scalar_one()
+    queued = (
+        await db.execute(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.status.in_([MessageStatus.APPROVED, MessageStatus.QUEUED]))
+        )
+    ).scalar_one()
+    failed = (
+        await db.execute(select(func.count()).select_from(Message).where(Message.status == MessageStatus.FAILED))
+    ).scalar_one()
+    rules = await ss.load(db, ss.SendingRules)
+    return render(
+        request,
+        "dashboard.html",
+        user=user,
+        listings=listings,
+        pending=pending,
+        queued=queued,
+        failed=failed,
+        rules=rules,
+        health=await full_health(),
+        flash=request.session.pop("flash", None),
+    )
 
 
 @router.get("/audit")

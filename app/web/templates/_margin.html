@@ -1,0 +1,5 @@
+{% if error %}<span class="bad small">{{ error }}</span>
+{% elif evaluation %}
+<span class="small">Прибыль {{ money(evaluation.profit) }} · маржа <b class="{{ 'bad' if evaluation.below_minimum else 'ok' }}">{{ '%.1f' % (evaluation.margin * 100) }}%</b>
+{% if evaluation.below_minimum %} · <b class="bad">ниже минимальной цены</b>{% endif %}</span>
+{% endif %}

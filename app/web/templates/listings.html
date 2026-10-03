@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row" style="justify-content: space-between">
+  <h2>Заявки</h2>
+  {% if user.role == 'owner' %}<a class="btn" href="/listings/new">+ Добавить заявку</a>{% endif %}
+</div>
+<div class="row small" style="margin-bottom: 12px">
+  <a href="/listings" class="badge {{ 'ok' if not status }}">Активные</a>
+  {% for key, name in status_names.items() %}
+  <a href="/listings?status={{ key }}" class="badge {{ 'ok' if status == key }}">{{ name }}</a>
+  {% endfor %}
+</div>
+<div class="card table-wrap">
+  <table>
+    <tr><th>#</th><th>Заявка</th><th>Заказчик</th><th>Статус</th><th>Оценка</th><th>Срок подачи</th></tr>
+    {% for listing, org_name in rows %}
+    <tr>
+      <td>{{ listing.id }}</td>
+      <td><a href="/listings/{{ listing.id }}">{{ listing.title }}</a>
+        {% if listing.exclusion_reason %}<div class="small muted">{{ listing.exclusion_reason }}</div>{% endif %}</td>
+      <td>{{ org_name or '—' }}</td>
+      <td><span class="badge">{{ status_names.get(listing.status, listing.status) }}</span></td>
+      <td>{{ listing.score if listing.score is not none else '—' }}</td>
+      <td class="small">{{ to_local(listing.deadline_at) or '—' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">Заявок нет. Добавьте вручную или дождитесь подключения источников (этап 3).</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
