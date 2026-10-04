@@ -12,6 +12,8 @@ S3_BUCKET="__S3_BUCKET__"
 S3_ACCESS="__S3_ACCESS__"
 S3_SECRET="__S3_SECRET__"
 CODE_KEY="__CODE_KEY__"
+CODE_URL="__CODE_URL__"  # optional presigned URL (no signing needed on the server)
+STATUS_TOKEN="__STATUS_TOKEN__"  # private path of the progress page https://DOMAIN/STATUS_TOKEN/log.txt
 DOMAIN="__DOMAIN__"
 STATUS_DOMAIN="__STATUS_DOMAIN__"
 DATABASE_URL="__DATABASE_URL__"
@@ -24,8 +26,27 @@ s3() {  # s3 METHOD KEY [curl args...]
   curl -sS --fail --retry 5 --retry-delay 5 --aws-sigv4 "aws:amz:${S3_REGION}:s3" --user "${S3_ACCESS}:${S3_SECRET}" \
     -X "$method" "$@" "${S3_ENDPOINT}/${S3_BUCKET}/${key}"
 }
-report() { s3 PUT "deploy/status/$(date -u +%Y%m%dT%H%M%SZ)-$1" --data-binary "${2:-}" -o /dev/null || true; }
-fail() { report "FAILED-$1" "$(tail -n 60 /var/log/medproject-bootstrap.log)"; exit 1; }
+report() {
+  echo "### STEP $1 $(date -u +%H:%M:%S)"
+  s3 PUT "deploy/status/$(date -u +%Y%m%dT%H%M%SZ)-$1" --data-binary "${2:-}" -o /dev/null 2>/dev/null || true
+  publish_log
+}
+publish_log() {
+  [ -d /var/lib/mp-status ] || return 0
+  mkdir -p "/var/lib/mp-status/${STATUS_TOKEN}"
+  tail -n 300 /var/log/medproject-bootstrap.log > "/var/lib/mp-status/${STATUS_TOKEN}/log.txt" 2>/dev/null || true
+}
+status_page_up() {  # temporary HTTPS page with the install log until the real stack takes ports 80/443
+  mkdir -p /var/lib/mp-status
+  docker rm -f mp-status >/dev/null 2>&1
+  docker run -d --name mp-status --restart unless-stopped -p 80:80 -p 443:443 -v /var/lib/mp-status:/srv:ro \
+    caddy:2-alpine caddy file-server --domain "$DOMAIN" --root /srv >/dev/null 2>&1 || echo "status page failed"
+}
+fail() {
+  report "FAILED-$1" "$(tail -n 60 /var/log/medproject-bootstrap.log)"
+  status_page_up; publish_log
+  exit 1
+}
 
 # A public IPv4 may be attached a few minutes after the first boot: wait for internet access (up to an hour).
 for _ in $(seq 1 120); do
@@ -47,6 +68,9 @@ if ! command -v docker >/dev/null; then
     || fail "docker-install"
 fi
 systemctl enable --now docker
+status_page_up
+( while sleep 15; do publish_log; done ) &
+LOG_PUBLISHER=$!
 report "02-docker-ok"
 
 ufw allow OpenSSH >/dev/null; ufw allow 80/tcp >/dev/null; ufw allow 443/tcp >/dev/null; ufw allow 443/udp >/dev/null
@@ -56,8 +80,15 @@ systemctl enable --now fail2ban && systemctl restart fail2ban
 report "03-firewall-ok"
 
 mkdir -p "$APP_DIR"
-s3 GET "$CODE_KEY" -o /tmp/medproject.tar.gz || fail "download-code"
-tar -xzf /tmp/medproject.tar.gz -C "$APP_DIR" || fail "unpack-code"
+if [ -s /root/medproject-code.tar.xz.b64 ]; then
+  base64 -d /root/medproject-code.tar.xz.b64 | tar -xJf - -C "$APP_DIR" || fail "unpack-embedded-code"
+elif [ -n "$CODE_URL" ]; then
+  curl -sS --fail --retry 5 -o /tmp/medproject.tar.gz "$CODE_URL" || fail "download-code-url"
+  tar -xzf /tmp/medproject.tar.gz -C "$APP_DIR" || fail "unpack-code"
+else
+  s3 GET "$CODE_KEY" -o /tmp/medproject.tar.gz || fail "download-code"
+  tar -xzf /tmp/medproject.tar.gz -C "$APP_DIR" || fail "unpack-code"
+fi
 echo "$CODE_KEY" > "$APP_DIR/.deployed_key"
 report "04-code-ok"
 
@@ -89,13 +120,15 @@ PY
 fi
 report "05-env-ok"
 
-docker compose up -d --build || fail "compose-up"
+docker compose build || fail "compose-build"
+docker rm -f mp-status >/dev/null 2>&1  # free ports 80/443 for the real stack
+docker compose up -d || fail "compose-up"
 report "06-started"
 for _ in $(seq 1 60); do
   if docker compose exec -T api python -m app.ops.healthcheck api >/dev/null 2>&1; then report "07-healthy"; break; fi
   sleep 10
 done
-docker compose ps > /tmp/ps.txt 2>&1; report "08-ps" "$(cat /tmp/ps.txt)"
+docker compose ps > /tmp/ps.txt 2>&1; cat /tmp/ps.txt; report "08-ps" "$(cat /tmp/ps.txt)"
 
 # Owner-approved updates: the timer applies a new version only when deploy/update-request names it.
 install -m 0755 deploy/updater.sh /usr/local/bin/medproject-update
@@ -127,3 +160,4 @@ WantedBy=timers.target
 UNIT
 systemctl daemon-reload && systemctl enable --now medproject-update.timer
 report "09-done"
+kill "$LOG_PUBLISHER" 2>/dev/null || true
