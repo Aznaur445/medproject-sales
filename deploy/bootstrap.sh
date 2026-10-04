@@ -27,6 +27,11 @@ s3() {  # s3 METHOD KEY [curl args...]
 report() { s3 PUT "deploy/status/$(date -u +%Y%m%dT%H%M%SZ)-$1" --data-binary "${2:-}" -o /dev/null || true; }
 fail() { report "FAILED-$1" "$(tail -n 60 /var/log/medproject-bootstrap.log)"; exit 1; }
 
+# A public IPv4 may be attached a few minutes after the first boot: wait for internet access (up to an hour).
+for _ in $(seq 1 120); do
+  curl -sS -o /dev/null --max-time 10 https://download.docker.com && break
+  sleep 30
+done
 report "01-start"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq && apt-get install -y -qq ca-certificates curl ufw fail2ban python3 >/dev/null || fail "apt"
