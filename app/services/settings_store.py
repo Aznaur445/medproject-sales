@@ -215,3 +215,33 @@ class Filters(BaseModel):
 
 
 GROUPS["filters"] = Filters
+
+
+class Capabilities(BaseModel):
+    """What the owner can offer: compared with tender requirements (F4, F9)."""
+
+    has_sro_design: bool = False
+    has_iso: bool = False
+    has_ecp: bool = True
+    gip_in_nopriz: bool = False
+    experience_years: int = 0
+    medical_projects_done: int = 0
+    can_travel: bool = True
+    min_advance_percent: int = 30  # below this the payment terms are a risk
+
+
+class Scoring(BaseModel):
+    """Weights of scoring components (F4); the final score is 0–100."""
+
+    w_relevance: int = 25
+    w_margin: int = 20
+    w_deadline: int = 10
+    w_requirements: int = 15
+    w_cases: int = 10
+    w_customer: int = 10
+    w_budget: int = 10
+    auto_exclude_below: int = 0  # 0 = never auto-exclude by score
+
+
+GROUPS["capabilities"] = Capabilities
+GROUPS["scoring"] = Scoring

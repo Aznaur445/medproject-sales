@@ -65,6 +65,35 @@
   </form>
 </div>
 
+<div class="card" id="capabilities">
+  <h3>Мои возможности и оценка заявок</h3>
+  <p class="small muted">Сравниваются с требованиями заявок: чего не хватает, снижает оценку и попадает в чек-лист.</p>
+  <form method="post" action="/settings/capabilities">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      <label class="check"><input type="checkbox" name="has_sro_design" value="1" {{ 'checked' if caps.has_sro_design }}> Членство в СРО проектировщиков</label>
+      <label class="check"><input type="checkbox" name="has_iso" value="1" {{ 'checked' if caps.has_iso }}> Сертификат ISO 9001</label>
+      <label class="check"><input type="checkbox" name="has_ecp" value="1" {{ 'checked' if caps.has_ecp }}> Есть ЭЦП (КЭП)</label>
+      <label class="check"><input type="checkbox" name="gip_in_nopriz" value="1" {{ 'checked' if caps.gip_in_nopriz }}> ГИП в реестре НОПРИЗ</label>
+      <label class="check"><input type="checkbox" name="can_travel" value="1" {{ 'checked' if caps.can_travel }}> Возможны выезды на объект</label>
+    </div>
+    <div class="form-grid">
+      <div><label>Опыт, лет</label><input name="experience_years" type="number" min="0" value="{{ caps.experience_years }}"></div>
+      <div><label>Выполнено медицинских проектов</label><input name="medical_projects_done" type="number" min="0" value="{{ caps.medical_projects_done }}"></div>
+      <div><label>Минимальный аванс, %</label><input name="min_advance_percent" type="number" min="0" max="100" value="{{ caps.min_advance_percent }}"></div>
+    </div>
+    <h4>Веса оценки (0–100 баллов в сумме пропорционально)</h4>
+    <div class="form-grid">
+      {% for key, title in [('w_relevance', 'Соответствие профилю'), ('w_margin', 'Маржинальность'), ('w_deadline', 'Срок подачи'),
+        ('w_requirements', 'Требования и риски'), ('w_cases', 'Похожие кейсы'), ('w_customer', 'Заказчик'), ('w_budget', 'Бюджет'),
+        ('auto_exclude_below', 'Автоотсев ниже оценки (0 — выкл.)')] %}
+      <div><label>{{ title }}</label><input name="{{ key }}" type="number" min="0" max="100" value="{{ scoring[key] }}"></div>
+      {% endfor %}
+    </div>
+    {% if user.role == 'owner' %}<button type="submit" style="margin-top:8px">Сохранить</button>{% endif %}
+  </form>
+</div>
+
 <div class="card" id="requisites">
   <h3>Реквизиты ИП</h3>
   <p class="small muted">Попадают в КП и подпись письма. Хранятся в базе, в коде их нет.</p>

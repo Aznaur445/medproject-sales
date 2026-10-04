@@ -53,6 +53,54 @@
   {% endif %}
 </div>
 
+<div class="card" id="analysis">
+  <h3>Документы и анализ {% if listing.score is not none %}<span class="badge {{ 'ok' if listing.score >= 60 else ('warn' if listing.score >= 40 else 'bad') }}">оценка {{ listing.score }}/100</span>{% endif %}</h3>
+  {% if documents %}<ul class="small">{% for d in documents %}<li><a href="/files/{{ d.storage_key }}">{{ d.filename }}</a> <span class="muted">{{ (d.size_bytes or 0) // 1024 }} КБ</span></li>{% endfor %}</ul>{% endif %}
+  {% if owner %}
+  <form method="post" action="/listings/{{ listing.id }}/documents" enctype="multipart/form-data" class="row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="file" name="files" multiple accept=".pdf,.docx,.xlsx,.xlsm,.png,.jpg,.jpeg,.tif,.tiff,.txt" style="width:auto">
+    <button class="secondary" type="submit">Загрузить ТЗ / документы</button>
+  </form>
+  <form method="post" action="/listings/{{ listing.id }}/analyze" style="margin-top:8px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">{{ 'Проанализировать заново' if listing.extracted.get('fields') else 'Проанализировать' }}</button>
+  </form>
+  {% endif %}
+  {% set ex = listing.extracted or {} %}
+  {% if ex.get('fields') %}
+  <p class="small muted">Анализ: {{ ex.analyzed_at[:16].replace('T', ' ') }} UTC · {{ 'ИИ: ' ~ ex.ai if ex.ai else 'по правилам (ИИ не подключён)' }}{% if ex.ai_error %} · ИИ не ответил, использованы правила{% endif %}</p>
+  <div class="table-wrap"><table class="small">
+    <tr><th>Поле</th><th>Значение</th><th>Уверенность</th><th>Где найдено</th></tr>
+    {% for key, title in field_titles.items() %}{% set fv = ex.fields.get(key, {}) %}{% if fv and fv.value not in (none, '', []) %}
+    <tr><td>{{ title }}</td><td>{{ fv.value|join(', ') if fv.value is iterable and fv.value is not string else fv.value }}</td>
+      <td>{{ '%.0f' % (fv.confidence * 100) }}%</td><td class="muted">{{ fv.source or '' }}</td></tr>
+    {% endif %}{% endfor %}
+  </table></div>
+  {% if ex.fields.questions %}<h4>Уточняющие вопросы заказчику</h4><ol class="small">{% for q in ex.fields.questions %}<li>{{ q }}</li>{% endfor %}</ol>{% endif %}
+  {% if ex.findings %}
+  <h4>Требования и риски</h4>
+  <div class="table-wrap"><table class="small">
+    {% for f in ex.findings %}
+    <tr><td>{{ 'Требование' if f.kind == 'requirement' else 'Риск' }}</td><td><b>{{ f.title }}</b><div class="muted">«{{ f.quote }}»</div></td>
+      <td><span class="badge {{ {'high': 'bad', 'missing': 'bad', 'medium': 'warn', 'check': 'warn', 'low': '', 'ok': 'ok'}.get(f.level, '') }}">{{ {'high': 'высокий', 'medium': 'средний', 'low': 'низкий', 'ok': 'есть', 'missing': 'нет', 'check': 'проверить'}.get(f.level, f.level) }}</span></td>
+      <td>{{ f.recommendation }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+  {% if listing.complex_procedure %}<p class="flash warn small">Похоже на сложную процедуру участия (площадка, ЭЦП, оригиналы). Пакет участия появится на этапе 6.</p>{% endif %}
+  {% endif %}
+  {% set comps = (listing.score_explanation or {}).get('components') %}
+  {% if comps %}
+  <h4>Почему {{ listing.score }}</h4>
+  <table class="small">{% for c in comps %}<tr><td>{{ c.name }}</td><td class="num">{{ c.points }} / {{ c.weight }}</td><td class="muted">{{ c.note }}</td></tr>{% endfor %}</table>
+  {% endif %}
+  {% if case_matches %}
+  <h4>Подходящие кейсы (попадут в КП)</h4>
+  <ul class="small">{% for m in case_matches %}<li><b>{{ m.case.title }}</b> — {{ m.reasons|join('; ') }}</li>{% endfor %}</ul>
+  {% endif %}
+</div>
+
 <div class="card" id="estimate">
   <h3>Расчёт стоимости</h3>
   {% if table.is_example %}<div class="flash warn small">Расценки-пример по КП «Медскан». Замените их своими в разделе <a href="/prices">«Расценки»</a>.</div>{% endif %}

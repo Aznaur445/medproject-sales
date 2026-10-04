@@ -209,6 +209,15 @@ def ingest(db: Session, source: Source, items: list[FoundItem]) -> IngestStats:
         if org and item.contact_email and item.contact_source:
             add_email_channel(db, org, item.contact_email, item.contact_source)
         if listing.status == ListingStatus.FOUND:
-            stats.new_relevant.append(listing.id)
+            from app.services.scoring import score_listing
+
+            score_listing(db, listing)
+            threshold = ss.load_sync(db, ss.Scoring).auto_exclude_below
+            if threshold and (listing.score or 0) < threshold:
+                listing.status = ListingStatus.EXCLUDED
+                listing.exclusion_reason = f"низкая оценка {listing.score} (порог {threshold})"
+                stats.new_excluded += 1
+            else:
+                stats.new_relevant.append(listing.id)
     db.flush()
     return stats

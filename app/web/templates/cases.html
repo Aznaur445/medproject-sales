@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% set owner = user.role == 'owner' %}
+{% block content %}
+<h2>Мои кейсы</h2>
+<p class="muted small">Реализованные проекты. Для каждой заявки сервис подбирает 3–5 самых похожих: по типу объекта, площади,
+  разделам, давности и региону. Они попадают в КП. Название заказчика выводится только если отмечено «можно упоминать».</p>
+{% for c in cases %}
+<details class="card">
+  <summary><b>{{ c.title }}</b> <span class="muted small">{{ c.object_type or '' }}{% if c.area_m2 %} · {{ c.area_m2|int }} м²{% endif %}{% if c.year %} · {{ c.year }}{% endif %}</span></summary>
+  {% if owner %}{% with c=c %}{% include "_case_form.html" %}{% endwith %}
+  <form method="post" action="/cases/{{ c.id }}/delete" class="row small" style="margin-top:8px"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="check small"><input type="checkbox" required> удалить кейс</label><button class="link" type="submit">ок</button></form>{% endif %}
+</details>
+{% else %}<p class="muted">Кейсов пока нет.</p>{% endfor %}
+{% if owner %}
+<div class="card"><h3>Добавить кейс</h3>{% with c=none %}{% include "_case_form.html" %}{% endwith %}</div>
+{% endif %}
+{% endblock %}

@@ -198,3 +198,28 @@ def manual_source_reminders() -> int:
     if links:
         send_owner_message("👀 Проверьте вручную:\n" + "\n".join(f"• {n}: {u}" for n, u in links))
     return len(links)
+
+
+# --- analysis (stage 4) -------------------------------------------------------------------------
+
+
+@celery.task(acks_late=False)
+def analyze_listing_task(listing_id: int) -> dict:
+    from app.services.analysis import analyze_listing
+
+    with sync_session() as db:
+        result = analyze_listing(db, listing_id)
+        listing = db.get(Listing, listing_id)
+        score, title = listing.score, listing.title
+        db.commit()
+    risks = [f for f in result["findings"] if f["kind"] == "risk" and f["level"] == "high"]
+    missing = [f for f in result["findings"] if f["kind"] == "requirement" and f["level"] == "missing"]
+    lines = [f"🧠 Анализ заявки #{listing_id} готов: оценка {score}/100", title[:150]]
+    if missing:
+        lines.append("Не хватает: " + ", ".join(f["title"] for f in missing))
+    if risks:
+        lines.append("Высокие риски: " + ", ".join(f["title"] for f in risks))
+    if result.get("ai_error"):
+        lines.append(f"ИИ недоступен ({result['ai_error'][:80]}), использован разбор по правилам.")
+    send_owner_message("\n".join(lines))
+    return {"score": score}

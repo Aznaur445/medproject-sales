@@ -30,6 +30,8 @@ dependencies = [
     "pymorphy3-dicts-ru>=2.4.417150.4580142",
     "rapidfuzz>=3.14.6",
     "beautifulsoup4>=4.15.0",
+    "pypdf>=6.19.0",
+    "openpyxl>=3.1.5",
 ]
 
 [dependency-groups]
@@ -59,6 +61,7 @@ ignore = ["S101", "B008"]
 "migrations/**" = ["E501"]
 "app/ops/backup.py" = ["S603", "S607"]  # pg_dump/pg_restore with fixed argument lists
 "app/services/proposal_doc.py" = ["S603", "S607"]  # soffice with fixed argument list
+"app/services/documents.py" = ["S603", "S607"]  # tesseract/pdftoppm with fixed argument lists
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

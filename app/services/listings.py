@@ -222,6 +222,9 @@ def make_estimate(db: Session, listing: Listing, inputs: EstimateInput) -> tuple
     if inputs.object_type and not listing.object_type:
         listing.object_type = inputs.object_type
     db.flush()
+    from app.services.scoring import score_listing
+
+    score_listing(db, listing)
     return estimate, result
 
 

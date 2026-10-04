@@ -38,6 +38,7 @@ async def settings_page(request: Request, user: User = Depends(current_user)):
 
     req, defaults, rules = await in_db(load)
     integrations = await in_db(_integrations_view)
+    caps, scoring = await in_db(lambda db: (ss.load_sync(db, ss.Capabilities), ss.load_sync(db, ss.Scoring)))
     return render(
         request,
         "settings.html",
@@ -46,6 +47,8 @@ async def settings_page(request: Request, user: User = Depends(current_user)):
         defaults=defaults,
         rules=rules,
         flash=request.session.pop("flash", None),
+        caps=caps,
+        scoring=scoring,
         **integrations,
     )
 

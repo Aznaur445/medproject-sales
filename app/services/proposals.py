@@ -41,6 +41,7 @@ from app.services.calculator import (
     evaluate_price,
     round_money,
 )
+from app.services.cases import match_cases
 from app.services.listings import latest_estimate, listing_email
 from app.services.proposal_doc import ProposalContent, ProposalSection, docx_to_pdf, money, render_docx
 from app.services.runtime_config import mail_config
@@ -243,6 +244,7 @@ def prepare_proposal(
         signature=_fmt(defaults.signature, brand=req.brand),
         valid_until=date.today() + timedelta(days=defaults.validity_days),
         requisites=req,
+        cases=[m.line() for m in match_cases(db, listing, limit=3)],
     )
 
     proposal = db.execute(select(Proposal).where(Proposal.listing_id == listing_id)).scalar_one_or_none()

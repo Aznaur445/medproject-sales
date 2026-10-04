@@ -1,0 +1,20 @@
+<form method="post" action="/cases">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="case_id" value="{{ c.id if c else '' }}">
+  <div class="form-grid">
+    <div><label>Название проекта *</label><input name="title" required value="{{ c.title if c else '' }}" placeholder="Медцентр «Инвитро» в Воронеже"></div>
+    <div><label>Тип объекта</label><select name="object_type"><option value="">—</option>
+      {% for t in object_types %}<option {{ 'selected' if c and c.object_type == t }}>{{ t }}</option>{% endfor %}</select></div>
+    <div><label>Площадь, м²</label><input name="area_m2" inputmode="decimal" value="{{ c.area_m2 if c and c.area_m2 else '' }}"></div>
+    <div><label>Год</label><input name="year" inputmode="numeric" value="{{ c.year if c and c.year else '' }}"></div>
+    <div><label>Заказчик</label><input name="customer_name" value="{{ c.customer_name if c and c.customer_name else '' }}"></div>
+    <div><label>Регион / город</label><input name="region" value="{{ c.region if c and c.region else '' }}"></div>
+    <div><label>Стадии (через запятую)</label><input name="stages" value="{{ c.stages|join(', ') if c else '' }}" placeholder="ПД, РД"></div>
+    <div><label>Разделы (через запятую)</label><input name="sections" value="{{ c.sections|join(', ') if c else '' }}" placeholder="АР, ЭОМ, ОВиК"></div>
+  </div>
+  <label>Результат</label><textarea name="result" rows="2">{{ c.result if c and c.result else '' }}</textarea>
+  <label>Отзыв</label><textarea name="review_text" rows="2">{{ c.review_text if c and c.review_text else '' }}</textarea>
+  <label>Ссылки (через запятую)</label><input name="links" value="{{ c.links|join(', ') if c else '' }}">
+  <label class="check"><input type="checkbox" name="can_mention_customer" value="1" {{ 'checked' if c and c.can_mention_customer }}> Можно упоминать заказчика в КП</label>
+  <button type="submit" style="margin-top:8px">Сохранить</button>
+</form>

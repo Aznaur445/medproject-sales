@@ -20,6 +20,7 @@ from app.models import (
     ContactChannel,
     Estimate,
     Listing,
+    ListingDocument,
     ListingVersion,
     Message,
     Organization,
@@ -32,7 +33,9 @@ from app.models import (
 from app.models.enums import ListingStatus, MessageStatus
 from app.services import mailer, storage
 from app.services import settings_store as ss
+from app.services.analysis import FIELD_TITLES
 from app.services.calculator import EstimateInput, EstimateResult, PriceTableData, evaluate_price
+from app.services.cases import match_cases
 from app.services.listings import (
     ManualListingInput,
     active_price_table,
@@ -253,7 +256,16 @@ def _listing_context(db, listing_id: int) -> dict[str, Any]:
         "requisites_ok": ss.load_sync(db, ss.Requisites).is_complete,
         "versions_of_listing": db.execute(
             select(ListingVersion).where(ListingVersion.listing_id == listing_id).order_by(ListingVersion.version)
-        ).scalars().all(),
+        )
+        .scalars()
+        .all(),
+        "documents": db.execute(
+            select(ListingDocument).where(ListingDocument.listing_id == listing_id).order_by(ListingDocument.id)
+        )
+        .scalars()
+        .all(),
+        "case_matches": match_cases(db, listing),
+        "field_titles": FIELD_TITLES,
         "current_sections": current_sections,
         "addable": addable,
         "version_eval": version_evaluation(db, current_version) if current_version else None,

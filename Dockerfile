@@ -11,6 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # postgresql-client-18 from the PostgreSQL repo: pg_dump/pg_restore must be at least the server's major version
 # (managed Timeweb database is PostgreSQL 18; a newer client also works with older servers).
 # libreoffice-writer-nogui + fonts: DOCX -> PDF conversion of proposals.
+# tesseract-ocr(-rus) + poppler-utils: OCR of scanned tender documents.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && install -d /usr/share/postgresql-common/pgdg \
@@ -19,7 +20,7 @@ RUN apt-get update \
        > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends postgresql-client-18 libreoffice-writer-nogui \
-       fonts-liberation fonts-dejavu-core \
+       fonts-liberation fonts-dejavu-core tesseract-ocr tesseract-ocr-rus poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv==0.8.17
