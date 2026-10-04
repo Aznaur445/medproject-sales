@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% set owner = user.role == 'owner' %}
+{% block content %}
+<h2>Источники заявок</h2>
+<p class="muted small">Госзакупки (ЕИС, 44-ФЗ, 223-ФЗ) не подключаются и отсеиваются автоматически. Сайты, которые запрещают
+  автоматический сбор (robots.txt, правила площадки), не опрашиваются: для них — «Ручная проверка» со ссылкой-напоминанием.</p>
+<div class="card table-wrap">
+  <table>
+    <tr><th>Источник</th><th>Тип</th><th>Состояние</th><th>Последняя проверка</th><th>Заявок</th><th></th></tr>
+    {% for s in sources %}
+    {% set c = connectors.get(s.connector) %}
+    <tr>
+      <td>{{ s.name }}<div class="small muted">каждые {{ s.schedule_minutes }} мин</div></td>
+      <td class="small">{{ c.title if c else s.connector }}</td>
+      <td>
+        {% if not s.enabled %}<span class="badge">выключен</span>
+        {% elif s.legal_status == 'manual_check' %}<span class="badge warn">ручная проверка</span>
+        {% elif s.circuit_open_until %}<span class="badge bad">пауза после ошибок</span>
+        {% elif s.consecutive_failures %}<span class="badge warn">ошибки: {{ s.consecutive_failures }}</span>
+        {% else %}<span class="badge ok">работает</span>{% endif %}
+        {% if s.last_error %}<div class="small muted">{{ s.last_error[:200] }}</div>{% endif %}
+      </td>
+      <td class="small">{{ to_local(s.last_run_at) or '—' }}{% if s.last_success_at %}<div class="muted">успешно: {{ to_local(s.last_success_at) }}</div>{% endif %}</td>
+      <td>{{ counts.get(s.id, 0) }}</td>
+      <td>{% if owner and s.connector != 'manual' %}
+        <div class="row small">
+          {% if s.enabled and c and c.runnable %}<form method="post" action="/sources/{{ s.id }}/run"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link" type="submit">проверить сейчас</button></form>{% endif %}
+          <form method="post" action="/sources/{{ s.id }}/toggle"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link" type="submit">{{ 'выключить' if s.enabled else 'включить' }}</button></form>
+          <form method="post" action="/sources/{{ s.id }}/delete"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label class="check small"><input type="checkbox" required> удалить</label><button class="link" type="submit">ок</button></form>
+        </div>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">Источников пока нет. Добавьте первый ниже.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if owner %}
+<div class="card" id="add">
+  <h3>Добавить источник</h3>
+  {% for key, c in connectors.items() %}
+  <details style="margin-bottom:10px">
+    <summary><b>{{ c.title }}</b></summary>
+    <p class="small muted">{{ c.help }}</p>
+    <form method="post" action="/sources">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="connector" value="{{ key }}">
+      <div class="form-grid">
+        <div><label>Название (как будет видно в списке)</label><input name="name"></div>
+        {% for f in c.config_fields %}
+        <div><label>{{ f.label }}{% if f.required %} *{% endif %}</label>
+          <input name="{{ key }}__{{ f.key }}" {{ 'type=password autocomplete=off' if f.secret }} placeholder="{{ f.placeholder }}" {{ 'required' if f.required }}></div>
+        {% endfor %}
+        <div><label>Проверять каждые, мин</label><input name="schedule_minutes" type="number" min="15" value="{{ 1440 if key == 'manual_link' else 60 }}"></div>
+      </div>
+      <button type="submit" style="margin-top:8px">Добавить</button>
+    </form>
+  </details>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

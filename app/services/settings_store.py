@@ -139,3 +139,79 @@ class Integrations(BaseModel):
 
 
 GROUPS["integrations"] = Integrations
+
+
+class Filters(BaseModel):
+    """Search filters (F2, F3). Words are matched by lemma, so «поликлиники» matches «поликлиника»."""
+
+    # A listing is relevant when it mentions design work AND a medical object.
+    work_words: list[str] = Field(
+        default_factory=lambda: [
+            "проектирование",
+            "проект",
+            "проектная документация",
+            "рабочая документация",
+            "ПД",
+            "РД",
+            "реконструкция",
+            "капитальный ремонт",
+            "капремонт",
+            "перепланировка",
+            "обследование",
+            "технологические решения",
+            "медицинская технология",
+        ]
+    )
+    object_words: list[str] = Field(
+        default_factory=lambda: [
+            "клиника",
+            "медицинский центр",
+            "медцентр",
+            "диагностический центр",
+            "стоматология",
+            "стоматологическая клиника",
+            "поликлиника",
+            "больница",
+            "госпиталь",
+            "лаборатория",
+            "операционная",
+            "чистые помещения",
+            "медицинская организация",
+            "медицинский",
+            "МРТ",
+            "КТ",
+            "рентген",
+            "роддом",
+            "женская консультация",
+            "реабилитационный центр",
+            "санаторий",
+            "ветеринарная клиника",
+        ]
+    )
+    stop_words: list[str] = Field(
+        default_factory=lambda: [
+            "поставка оборудования",
+            "поставка медицинского оборудования",
+            "медицинская мебель",
+            "уборка",
+            "клининг",
+            "охрана",
+            "питание",
+            "лекарственные препараты",
+            "расходные материалы",
+            "вакансия",
+            "резюме",
+            "ремонт оборудования",
+            "техническое обслуживание",
+            "строительно-монтажные работы",
+        ]
+    )
+    regions_allow: list[str] = Field(default_factory=list)  # empty = all Russia
+    regions_deny: list[str] = Field(default_factory=list)
+    budget_min: int | None = 300_000
+    budget_max: int | None = None
+    keep_unknown_budget: bool = True
+    notify_new: bool = True
+
+
+GROUPS["filters"] = Filters

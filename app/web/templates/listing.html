@@ -5,7 +5,22 @@
 <h2>#{{ listing.id }} {{ listing.title }}</h2>
 <p><span class="badge">{{ status_names.get(listing.status, listing.status) }}</span>
 {% if listing.exclusion_reason %} <span class="badge bad">{{ listing.exclusion_reason }}</span>{% endif %}
-{% if listing.url %} · <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer">источник</a>{% endif %}</p>
+{% if listing.url %} · <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer">источник</a>{% endif %}
+{% if listing.merged_into_id %} · <a href="/listings/{{ listing.merged_into_id }}">основная заявка #{{ listing.merged_into_id }}</a>{% endif %}</p>
+{% if listing.status == 'excluded' and owner and not (listing.exclusion_reason and 'гос' in listing.exclusion_reason) %}
+<form method="post" action="/listings/{{ listing.id }}/restore"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <button class="secondary" type="submit">Вернуть в работу</button></form>
+{% endif %}
+{% set fx = listing.score_explanation.get('filters') if listing.score_explanation else none %}
+{% if fx %}<p class="small muted">Фильтры: работы — {{ fx.work|join(', ') or 'нет' }}; объект — {{ fx.object|join(', ') or 'нет' }}{% if fx.stop %}; стоп-слова — {{ fx.stop|join(', ') }}{% endif %}</p>{% endif %}
+{% if versions_of_listing and versions_of_listing|length > 1 %}
+<details class="card"><summary><b>История изменений заявки</b> ({{ versions_of_listing|length }} версий)</summary>
+  {% for v in versions_of_listing|reverse %}{% if v.diff %}
+  <p class="small"><b>v{{ v.version }}</b> · {{ to_local(v.created_at) }}<br>
+    {% for field, change in v.diff.items() %}{{ field }}: {{ change[0] or '—' }} → {{ change[1] or '—' }}<br>{% endfor %}</p>
+  {% endif %}{% endfor %}
+</details>
+{% endif %}
 
 {% if not requisites_ok %}
 <div class="flash warn">Заполните реквизиты ИП в <a href="/settings">настройках</a>: без них КП будет без ИНН и контактов.</div>

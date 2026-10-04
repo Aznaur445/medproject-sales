@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Фильтры поиска</h2>
+<p class="muted small">Слова ищутся с учётом склонений («поликлиники» = «поликлиника»). Заявка проходит, если в ней есть хотя бы
+  одно слово про <b>работы</b> и одно про <b>медицинский объект</b>, и стоп-слов не больше, чем слов про работы. Отсеянные заявки
+  не удаляются: их видно в «Заявки → Исключена» и можно вернуть.</p>
+<form method="post" action="/filters" class="card">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="form-grid">
+    <div><label>Работы (по одному в строке)</label><textarea name="work_words" rows="10">{{ f.work_words|join('\n') }}</textarea></div>
+    <div><label>Медицинские объекты</label><textarea name="object_words" rows="10">{{ f.object_words|join('\n') }}</textarea></div>
+    <div><label>Стоп-слова</label><textarea name="stop_words" rows="10">{{ f.stop_words|join('\n') }}</textarea></div>
+  </div>
+  <div class="form-grid">
+    <div><label>Только эти регионы (пусто = вся Россия)</label><textarea name="regions_allow" rows="3">{{ f.regions_allow|join('\n') }}</textarea></div>
+    <div><label>Исключить регионы</label><textarea name="regions_deny" rows="3">{{ f.regions_deny|join('\n') }}</textarea></div>
+  </div>
+  <div class="form-grid">
+    <div><label>Бюджет от, ₽</label><input name="budget_min" inputmode="numeric" value="{{ f.budget_min or '' }}"></div>
+    <div><label>Бюджет до, ₽</label><input name="budget_max" inputmode="numeric" value="{{ f.budget_max or '' }}"></div>
+  </div>
+  <label class="check"><input type="checkbox" name="keep_unknown_budget" value="1" {{ 'checked' if f.keep_unknown_budget }}> Оставлять заявки без указанного бюджета</label>
+  <label class="check"><input type="checkbox" name="notify_new" value="1" {{ 'checked' if f.notify_new }}> Сообщать о новых заявках в Telegram</label>
+  {% if user.role == 'owner' %}<button type="submit" style="margin-top:8px">Сохранить</button>{% endif %}
+</form>
+{% endblock %}

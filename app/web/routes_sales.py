@@ -20,6 +20,7 @@ from app.models import (
     ContactChannel,
     Estimate,
     Listing,
+    ListingVersion,
     Message,
     Organization,
     PriceTable,
@@ -250,6 +251,9 @@ def _listing_context(db, listing_id: int) -> dict[str, Any]:
         "approvals": approvals,
         "contact_email": listing_email(db, listing),
         "requisites_ok": ss.load_sync(db, ss.Requisites).is_complete,
+        "versions_of_listing": db.execute(
+            select(ListingVersion).where(ListingVersion.listing_id == listing_id).order_by(ListingVersion.version)
+        ).scalars().all(),
         "current_sections": current_sections,
         "addable": addable,
         "version_eval": version_evaluation(db, current_version) if current_version else None,

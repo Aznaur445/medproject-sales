@@ -138,3 +138,63 @@ def due_reminders() -> int:
 @celery.task
 def send_card_task(message_id: int) -> None:
     send_card(message_id)
+
+
+# --- search (stage 3) ---------------------------------------------------------------------------
+
+
+@celery.task
+def dispatch_sources() -> int:
+    from app.services.source_runner import due_sources
+
+    with sync_session() as db:
+        ids = due_sources(db)
+    for source_id in ids:
+        run_source_task.delay(source_id)
+    return len(ids)
+
+
+@celery.task(acks_late=False)
+def run_source_task(source_id: int) -> dict:
+    from app.models import Source
+    from app.services import settings_store as ss
+    from app.services.source_runner import run_source
+
+    with sync_session() as db:
+        result = run_source(db, source_id)
+        source = db.get(Source, source_id)
+        name = source.name if source else f"#{source_id}"
+        notify_new = ss.load_sync(db, ss.Filters).notify_new
+        new_titles = []
+        if result.stats and result.stats.new_relevant:
+            for listing_id in result.stats.new_relevant[:10]:
+                listing = db.get(Listing, listing_id)
+                new_titles.append((listing_id, listing.title))
+        changes = result.stats.changed[:10] if result.stats else []
+    if result.circuit_opened:
+        alert(
+            f"Источник «{name}» не работает",
+            f"{result.error}\nПроверки приостановлены, повтор позже.",
+            dedup_key=f"source:{source_id}",
+        )
+    if new_titles and notify_new:
+        lines = [f"🔎 Новые заявки ({name}): {len(result.stats.new_relevant)}"]
+        lines += [f"#{lid} {title[:150]}" for lid, title in new_titles]
+        send_owner_message("\n".join(lines) + "\nПодробности: /today или в панели «Заявки».")
+    for listing_id, change in changes:
+        text = "; ".join(f"{field}: {old or '—'} → {new or '—'}" for field, (old, new) in change.items())
+        send_owner_message(f"✏️ Изменилась заявка #{listing_id}: {text[:800]}")
+    return {"ok": result.ok, "error": result.error, "skipped": result.skipped}
+
+
+@celery.task
+def manual_source_reminders() -> int:
+    """Daily links for sources that must be checked by hand (Avito etc.)."""
+    from app.models import Source
+
+    with sync_session() as db:
+        sources = db.execute(select(Source).where(Source.enabled.is_(True), Source.connector == "manual_link"))
+        links = [(s.name, s.config.get("url")) for s in sources.scalars()]
+    if links:
+        send_owner_message("👀 Проверьте вручную:\n" + "\n".join(f"• {n}: {u}" for n, u in links))
+    return len(links)

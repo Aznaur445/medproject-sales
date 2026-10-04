@@ -28,6 +28,11 @@ celery.conf.update(
         "watchdog": {"task": "app.worker.tasks.watchdog", "schedule": 300.0},
         "dispatch-queued": {"task": "app.worker.tasks_sales.dispatch_queued", "schedule": 300.0},
         "due-reminders": {"task": "app.worker.tasks_sales.due_reminders", "schedule": 300.0},
+        "dispatch-sources": {"task": "app.worker.tasks_sales.dispatch_sources", "schedule": 300.0},
+        "manual-source-reminders": {
+            "task": "app.worker.tasks_sales.manual_source_reminders",
+            "schedule": crontab(hour=10, minute=3, day_of_week="mon-fri"),
+        },
         # Times are in settings.timezone (Europe/Moscow by default).
         "daily-backup": {"task": "app.worker.tasks.daily_backup", "schedule": crontab(hour=3, minute=30)},
         "backup-watchdog": {"task": "app.worker.tasks.backup_watchdog", "schedule": crontab(hour=9, minute=7)},
