@@ -14,7 +14,6 @@ from enum import StrEnum
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models import (
     Approval,
@@ -44,6 +43,7 @@ from app.services.calculator import (
 )
 from app.services.listings import latest_estimate, listing_email
 from app.services.proposal_doc import ProposalContent, ProposalSection, docx_to_pdf, money, render_docx
+from app.services.runtime_config import mail_config
 
 log = get_logger(__name__)
 
@@ -53,7 +53,7 @@ class ProposalError(Exception):
 
 
 def sender_address() -> str | None:
-    return get_settings().mail_user
+    return mail_config().user
 
 
 def _fmt(text: str, **values: str) -> str:

@@ -1,8 +1,9 @@
+import secrets
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -150,3 +151,52 @@ async def logout_everywhere(request: Request, user: User = Depends(current_user)
     await db.commit()
     request.session.clear()
     return RedirectResponse("/login", status_code=303)
+
+
+async def _setup_allowed(request: Request, token: str, db: AsyncSession) -> bool:
+    expected = get_settings().setup_token
+    if expected is None or not token or not secrets.compare_digest(expected.get_secret_value(), token):
+        return False
+    return (await db.execute(select(func.count()).select_from(User))).scalar_one() == 0
+
+
+@router.get("/setup")
+async def setup_form(request: Request, token: str = "", db: AsyncSession = Depends(get_db)):
+    if not await _setup_allowed(request, token, db):
+        return RedirectResponse("/login", status_code=303)
+    return render(request, "setup.html", token=token)
+
+
+@router.post("/setup")
+async def setup(
+    request: Request,
+    token: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    password2: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+):
+    ip = client_ip(request)
+    limiter = _limiter()
+    if await limiter.is_blocked(f"setup:{ip}"):
+        return render(request, "login.html", 429, error="Слишком много попыток. Попробуйте позже.")
+    if not await _setup_allowed(request, token, db):
+        await limiter.register_failure(f"setup:{ip}")
+        return RedirectResponse("/login", status_code=303)
+    username = username.strip().lower()
+    error = None
+    if not username.isascii() or not username.replace("_", "").replace(".", "").isalnum() or len(username) < 3:
+        error = "Логин: латинские буквы и цифры, от 3 символов"
+    elif len(password) < 12:
+        error = "Пароль должен быть не короче 12 символов"
+    elif password != password2:
+        error = "Пароли не совпадают"
+    if error:
+        return render(request, "setup.html", 422, token=token, error=error, username=username)
+    user = User(username=username, password_hash=hash_password(password), role="owner")
+    db.add(user)
+    await db.flush()
+    await audit(db, "owner_created_via_setup", user_id=user.id, ip=ip)
+    await db.commit()
+    start_pre_auth(request, user)
+    return RedirectResponse("/login/2fa/setup", status_code=303)

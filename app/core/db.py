@@ -11,14 +11,23 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.core.config import get_settings
 
 
+def connect_args() -> dict[str, str]:
+    schema = get_settings().db_schema
+    return {"options": f"-c search_path={schema}"} if schema else {}
+
+
 @lru_cache
 def get_async_engine() -> AsyncEngine:
-    return create_async_engine(get_settings().database_url, pool_pre_ping=True, pool_size=5, max_overflow=5)
+    return create_async_engine(
+        get_settings().database_url, pool_pre_ping=True, pool_size=5, max_overflow=5, connect_args=connect_args()
+    )
 
 
 @lru_cache
 def get_sync_engine() -> Engine:
-    return create_engine(get_settings().database_url, pool_pre_ping=True, pool_size=5, max_overflow=5)
+    return create_engine(
+        get_settings().database_url, pool_pre_ping=True, pool_size=5, max_overflow=5, connect_args=connect_args()
+    )
 
 
 @lru_cache

@@ -49,6 +49,9 @@ def _clean_state():
     with get_sync_engine().begin() as conn:
         conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
     get_sync_redis().flushdb()
+    from app.services import runtime_config
+
+    runtime_config.reset_cache()
     yield
 
 

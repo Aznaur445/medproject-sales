@@ -126,3 +126,16 @@ def save_sync(db: Session, value: BaseModel, user_id: int | None = None) -> None
     else:
         row.value = data
         row.updated_by_id = user_id
+
+
+class Integrations(BaseModel):
+    """Telegram and mail credentials entered in the panel. Secrets are stored encrypted (FERNET_KEY)."""
+
+    telegram_bot_token_enc: str = ""
+    telegram_owner_ids: list[int] = Field(default_factory=list)
+    mail_user: str = ""
+    mail_app_password_enc: str = ""
+    mail_from_name: str = ""
+
+
+GROUPS["integrations"] = Integrations

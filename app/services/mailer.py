@@ -30,6 +30,7 @@ from app.services import settings_store as ss
 from app.services import storage
 from app.services.audit import audit_sync
 from app.services.proposals import payload_hash
+from app.services.runtime_config import mail_config
 
 log = get_logger(__name__)
 
@@ -62,8 +63,8 @@ def default_smtp(settings: Settings) -> smtplib.SMTP:
             client.starttls(context=ssl.create_default_context())
     client.ehlo_or_helo_if_needed()
     if client.has_extn("auth"):
-        password = settings.mail_app_password.get_secret_value() if settings.mail_app_password else ""
-        client.login(settings.mail_user or "", password)
+        mail = mail_config()
+        client.login(mail.user or "", mail.password or "")
     return client
 
 
@@ -170,7 +171,7 @@ def check_limits(db: Session, message: Message, rules: ss.SendingRules, now: dat
 
 def build_email(message: Message, settings: Settings) -> EmailMessage:
     email = EmailMessage()
-    email["From"] = formataddr((settings.mail_from_name, message.from_addr or ""))
+    email["From"] = formataddr((mail_config().from_name, message.from_addr or ""))
     email["To"] = message.to_addr or ""
     email["Subject"] = message.subject or ""
     email["Date"] = format_datetime(datetime.now(UTC))
@@ -249,7 +250,7 @@ def send_message(
     rules = ss.load_sync(db, ss.SendingRules)
     if rules.paused:
         reason = "отправка на паузе"
-    elif not settings.mail_app_password:
+    elif not mail_config().ready:
         reason = "почта не настроена (MAIL_APP_PASSWORD)"
     else:
         reason = check_limits(db, message, rules, now)

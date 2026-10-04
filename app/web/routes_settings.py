@@ -37,6 +37,7 @@ async def settings_page(request: Request, user: User = Depends(current_user)):
         )
 
     req, defaults, rules = await in_db(load)
+    integrations = await in_db(_integrations_view)
     return render(
         request,
         "settings.html",
@@ -45,6 +46,7 @@ async def settings_page(request: Request, user: User = Depends(current_user)):
         defaults=defaults,
         rules=rules,
         flash=request.session.pop("flash", None),
+        **integrations,
     )
 
 
@@ -276,3 +278,109 @@ async def optout_delete(request: Request, optout_id: int, user: User = Depends(r
     await in_db(run)
     _flash(request, "Запись удалена из реестра отказов", "warn")
     return RedirectResponse("/optouts", status_code=303)
+
+
+# --- integrations (Telegram, mail) ---------------------------------------------------------------
+
+
+def _integrations_view(db) -> dict[str, Any]:
+    from app.core.config import get_settings
+
+    data = ss.load_sync(db, ss.Integrations)
+    env = get_settings()
+    return {
+        "integrations": data,
+        "tg_token_set": bool(data.telegram_bot_token_enc) or env.telegram_bot_token is not None,
+        "mail_password_set": bool(data.mail_app_password_enc) or env.mail_app_password is not None,
+        "tg_from_env": env.telegram_bot_token is not None,
+        "mail_from_env": env.mail_app_password is not None,
+    }
+
+
+@router.post("/settings/integrations")
+async def save_integrations(request: Request, user: User = Depends(require_owner)):
+    from app.core.security import encrypt_secret
+    from app.services import runtime_config
+
+    form = await request.form()
+    try:
+        ids = [int(x) for x in str(form.get("telegram_owner_ids") or "").replace(" ", "").split(",") if x]
+    except ValueError:
+        _flash(request, "Telegram ID — это число (несколько — через запятую)", "bad")
+        return RedirectResponse("/settings#integrations", status_code=303)
+    token = str(form.get("telegram_bot_token") or "").strip()
+    password = str(form.get("mail_app_password") or "").strip()
+
+    def run(db):
+        data = ss.load_sync(db, ss.Integrations)
+        data.telegram_owner_ids = ids
+        data.mail_user = str(form.get("mail_user") or "").strip().lower()
+        data.mail_from_name = str(form.get("mail_from_name") or "").strip()
+        if token:  # empty field keeps the stored secret
+            data.telegram_bot_token_enc = encrypt_secret(token)
+        if password:
+            data.mail_app_password_enc = encrypt_secret(password)
+        ss.save_sync(db, data, user.id)
+        audit_sync(
+            db,
+            "settings_integrations",
+            actor="web",
+            user_id=user.id,
+            details={"telegram_token_changed": bool(token), "mail_password_changed": bool(password)},
+        )
+
+    await in_db(run)
+    runtime_config.reset_cache()
+    _flash(request, "Подключения сохранены. Бот подхватит изменения в течение минуты.")
+    return RedirectResponse("/settings#integrations", status_code=303)
+
+
+@router.post("/settings/integrations/test-telegram")
+async def test_telegram(request: Request, user: User = Depends(require_owner)):
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.services import runtime_config
+    from app.services.notify import send_owner_message
+
+    runtime_config.reset_cache()
+    ok = await run_in_threadpool(send_owner_message, "✅ Тестовое сообщение из панели МедПроект.")
+    _flash(
+        request,
+        "Сообщение отправлено, проверьте Telegram."
+        if ok
+        else "Не отправлено: проверьте токен и ID, и что вы нажали Start у бота.",
+        "ok" if ok else "bad",
+    )
+    return RedirectResponse("/settings#integrations", status_code=303)
+
+
+@router.post("/settings/integrations/test-mail")
+async def test_mail(request: Request, user: User = Depends(require_owner)):
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.core.config import get_settings
+    from app.services import runtime_config
+    from app.services.mailer import default_smtp
+
+    runtime_config.reset_cache()
+    if not runtime_config.mail_config().ready:
+        _flash(request, "Укажите адрес почты и пароль приложения", "bad")
+        return RedirectResponse("/settings#integrations", status_code=303)
+
+    def check() -> str | None:
+        try:
+            client = default_smtp(get_settings())
+            client.quit()
+            return None
+        except Exception as exc:  # noqa: BLE001
+            return type(exc).__name__
+
+    error = await run_in_threadpool(check)
+    _flash(
+        request,
+        "Почта подключена: вход на SMTP-сервер выполнен."
+        if error is None
+        else f"Не удалось войти на SMTP-сервер ({error}). Проверьте адрес и пароль приложения.",
+        "ok" if error is None else "bad",
+    )
+    return RedirectResponse("/settings#integrations", status_code=303)

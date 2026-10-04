@@ -5,9 +5,9 @@ from pathlib import Path
 
 import httpx
 
-from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.core.redis import get_sync_redis
+from app.services.runtime_config import telegram_config
 
 log = get_logger(__name__)
 
@@ -17,8 +17,8 @@ def send_owner_message(text: str, *, dedup_key: str | None = None, dedup_seconds
 
     `dedup_key` suppresses repeats of the same alert (e.g. a source that keeps failing).
     """
-    settings = get_settings()
-    if settings.telegram_bot_token is None or not settings.telegram_owner_ids:
+    tg = telegram_config()
+    if not tg.ready:
         log.warning("telegram_not_configured", text_preview=text[:80])
         return False
     if dedup_key:
@@ -27,9 +27,9 @@ def send_owner_message(text: str, *, dedup_key: str | None = None, dedup_seconds
                 return False
         except Exception:  # noqa: BLE001 - alerting must not fail because Redis is down
             log.warning("alert_dedup_unavailable")
-    url = f"https://api.telegram.org/bot{settings.telegram_bot_token.get_secret_value()}/sendMessage"
+    url = f"https://api.telegram.org/bot{tg.token}/sendMessage"
     delivered = False
-    for chat_id in settings.telegram_owner_ids:
+    for chat_id in tg.owner_ids:
         try:
             resp = httpx.post(
                 url, json={"chat_id": chat_id, "text": text[:4000], "disable_web_page_preview": True}, timeout=10
@@ -43,13 +43,13 @@ def send_owner_message(text: str, *, dedup_key: str | None = None, dedup_seconds
 
 def telegram_call(method: str, payload: dict) -> list[dict]:
     """Call a Bot API method for every owner chat (chat_id is filled in). Returns successful results."""
-    settings = get_settings()
-    if settings.telegram_bot_token is None or not settings.telegram_owner_ids:
+    tg = telegram_config()
+    if not tg.ready:
         log.warning("telegram_not_configured", method=method)
         return []
-    url = f"https://api.telegram.org/bot{settings.telegram_bot_token.get_secret_value()}/{method}"
+    url = f"https://api.telegram.org/bot{tg.token}/{method}"
     results = []
-    for chat_id in settings.telegram_owner_ids:
+    for chat_id in tg.owner_ids:
         try:
             resp = httpx.post(url, json={**payload, "chat_id": chat_id}, timeout=15)
             resp.raise_for_status()
@@ -60,12 +60,12 @@ def telegram_call(method: str, payload: dict) -> list[dict]:
 
 
 def telegram_send_document(path: Path, filename: str, caption: str = "") -> bool:
-    settings = get_settings()
-    if settings.telegram_bot_token is None or not settings.telegram_owner_ids:
+    tg = telegram_config()
+    if not tg.ready:
         return False
-    url = f"https://api.telegram.org/bot{settings.telegram_bot_token.get_secret_value()}/sendDocument"
+    url = f"https://api.telegram.org/bot{tg.token}/sendDocument"
     ok = False
-    for chat_id in settings.telegram_owner_ids:
+    for chat_id in tg.owner_ids:
         try:
             with path.open("rb") as fh:
                 resp = httpx.post(

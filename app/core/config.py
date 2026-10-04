@@ -22,9 +22,14 @@ class Settings(BaseSettings):
     session_max_age_hours: int = 12
     login_max_attempts: int = 5
     login_lockout_minutes: int = 15
+    # One-time link /setup?token=... to create the first owner when no users exist (servers set up without SSH).
+    setup_token: SecretStr | None = None
 
     # Infrastructure
     database_url: str = "postgresql+psycopg://medproject:medproject@localhost:5432/medproject"
+    # Own schema instead of "public": on PostgreSQL 15+ a non-owner user may not create tables in "public"
+    # (managed databases). Empty = default search_path.
+    db_schema: str = ""
     redis_url: str = "redis://localhost:6379/0"
     files_dir: str = "./data/files"
 
@@ -63,6 +68,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "telegram_bot_token",
+        "setup_token",
         "mail_user",
         "mail_app_password",
         "deepseek_api_key",

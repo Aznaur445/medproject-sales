@@ -3,6 +3,36 @@
 {% block content %}
 <h2>Настройки</h2>
 
+<div class="card" id="integrations">
+  <h3>Подключения: Telegram и почта</h3>
+  <p class="small muted">Пароли и токены хранятся в базе в зашифрованном виде. Пустое поле пароля или токена — оставить как есть.</p>
+  <form method="post" action="/settings/integrations">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      <div><label>Токен Telegram-бота {% if tg_token_set %}<span class="badge ok">задан</span>{% endif %}</label>
+        <input name="telegram_bot_token" type="password" autocomplete="off" placeholder="{{ 'задан' if tg_token_set else '1234567890:AA...' }}" {{ 'disabled' if tg_from_env }}></div>
+      <div><label>Ваш Telegram ID (несколько — через запятую)</label>
+        <input name="telegram_owner_ids" inputmode="numeric" value="{{ integrations.telegram_owner_ids|join(', ') }}"></div>
+      <div><label>Почта для отправки КП</label>
+        <input name="mail_user" type="email" value="{{ integrations.mail_user }}" placeholder="kp@project-med.ru"></div>
+      <div><label>Пароль приложения почты {% if mail_password_set %}<span class="badge ok">задан</span>{% endif %}</label>
+        <input name="mail_app_password" type="password" autocomplete="off" placeholder="{{ 'задан' if mail_password_set else 'пароль для внешних приложений' }}" {{ 'disabled' if mail_from_env }}></div>
+      <div><label>Имя отправителя</label>
+        <input name="mail_from_name" value="{{ integrations.mail_from_name }}" placeholder="МедПроект"></div>
+    </div>
+    {% if user.role == 'owner' %}<button type="submit" style="margin-top:8px">Сохранить подключения</button>{% endif %}
+  </form>
+  {% if user.role == 'owner' %}
+  <div class="row" style="margin-top:10px">
+    <form method="post" action="/settings/integrations/test-telegram"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary" type="submit">Проверить Telegram</button></form>
+    <form method="post" action="/settings/integrations/test-mail"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary" type="submit">Проверить почту</button></form>
+  </div>
+  <p class="small muted">Перед проверкой Telegram откройте своего бота и нажмите Start. Свой ID можно узнать у @userinfobot.</p>
+  {% endif %}
+</div>
+
 <div class="card" id="sending">
   <h3>Отправка</h3>
   <form method="post" action="/settings/pause" class="row" style="margin-bottom:12px">

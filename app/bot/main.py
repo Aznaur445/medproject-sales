@@ -17,6 +17,7 @@ from app.bot import approvals
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.redis import get_redis
+from app.services import runtime_config
 from app.services.health import full_health
 
 log = get_logger(__name__)
@@ -78,25 +79,53 @@ async def heartbeat_loop() -> None:
         await asyncio.sleep(60)
 
 
+async def watch_config(dp: Dispatcher, current_token: str, whitelist: WhitelistMiddleware, state: dict) -> None:
+    """Pick up owner IDs changed in the panel; restart polling when the bot token changes."""
+    while True:
+        await asyncio.sleep(60)
+        runtime_config.reset_cache()
+        tg = await asyncio.to_thread(runtime_config.telegram_config)
+        whitelist.allowed_ids = set(tg.owner_ids)
+        if tg.token != current_token:
+            log.info("bot_token_changed_restarting")
+            state["restart"] = True
+            await dp.stop_polling()
+            return
+
+
 async def main() -> None:
     settings = get_settings()
     configure_logging(settings.log_level, json=settings.env != "dev")
-    if settings.telegram_bot_token is None or not settings.telegram_owner_ids:
-        log.error("bot_not_configured", hint="set TELEGRAM_BOT_TOKEN and TELEGRAM_OWNER_IDS")
-        # Keep the container alive and reporting so the rest of the stack works before the bot is set up.
-        await heartbeat_loop()
-        return
-    bot = Bot(settings.telegram_bot_token.get_secret_value())
+    hb = asyncio.create_task(heartbeat_loop())  # the container reports alive even before the bot is configured
+    whitelist = WhitelistMiddleware(set())
     dp = Dispatcher(storage=RedisStorage.from_url(settings.redis_url))
-    dp.update.outer_middleware(WhitelistMiddleware(set(settings.telegram_owner_ids)))
+    dp.update.outer_middleware(whitelist)
     dp.include_router(router)
     dp.include_router(approvals.router)
-    hb = asyncio.create_task(heartbeat_loop())
+    warned = False
     try:
-        await dp.start_polling(bot, handle_signals=True)
+        while True:
+            tg = await asyncio.to_thread(runtime_config.telegram_config)
+            if not tg.ready:
+                if not warned:
+                    log.warning("bot_not_configured", hint="set the bot token and owner ID in panel settings")
+                    warned = True
+                await asyncio.sleep(60)
+                runtime_config.reset_cache()
+                continue
+            whitelist.allowed_ids = set(tg.owner_ids)
+            bot = Bot(tg.token)
+            state = {"restart": False}
+            watcher = asyncio.create_task(watch_config(dp, tg.token, whitelist, state))
+            try:
+                await dp.start_polling(bot, handle_signals=True)
+            finally:
+                watcher.cancel()
+                await bot.session.close()
+            if not state["restart"]:
+                break  # stopped by a signal: graceful shutdown
     finally:
         hb.cancel()
-        await bot.session.close()
 
 
 if __name__ == "__main__":
