@@ -49,6 +49,26 @@
   </table>
 </div>
 
+<div class="card table-wrap" id="platforms">
+  <div class="card-head"><h3>Площадки</h3><span class="small muted">{{ platforms|length }} подключено к автопоиску</span></div>
+  <p class="small muted">Все площадки опрашиваются автопоиском (официальный Yandex Search API). Документы скачиваются сами там, где
+    они открыты и площадка не запрещает автоматический сбор; на остальных — ссылка на тендер, а ТЗ вы присылаете боту
+    файлом с подписью <b>#номер</b>. Уведомления площадок можно направить в ящик источника «Рассылки площадок» — ссылки на
+    процедуры распознаются автоматически.</p>
+  <table>
+    <tr><th>Площадка</th><th>Документы</th><th>Уведомления</th><th>Медицинские заказчики</th></tr>
+    {% for p in platforms %}
+    <tr>
+      <td><b>{{ p.name }}</b><div class="small muted">{{ p.domains|join(', ') }}{% if p.paid %} · платный агрегатор{% endif %}</div></td>
+      <td><span class="badge {{ 'ok' if p.auto_documents else 'warn' }}">{{ 'скачиваются сами' if p.auto_documents else 'ТЗ — вручную' }}</span>
+        <div class="small muted">{{ p.docs_note }}</div></td>
+      <td class="small">{{ p.alerts_note }}</td>
+      <td class="small">{{ p.medical_buyers|join(', ') or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
 {% if owner %}
 <div class="card" id="add">
   <h3>Добавить источник</h3>

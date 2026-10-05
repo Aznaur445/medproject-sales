@@ -23,6 +23,7 @@ from app.core.logging import get_logger
 from app.models import Listing, ListingDocument
 from app.services import storage
 from app.sources.base import USER_AGENT, SourceError, get_page, page_text, robots_allowed
+from app.sources.platforms import platform_of
 
 log = get_logger(__name__)
 
@@ -61,6 +62,8 @@ class CollectReport:
     errors: list[str] = field(default_factory=list)
     needs_login: bool = False
     page_read: bool = False
+    platform: str | None = None  # name of a known platform
+    platform_note: str | None = None  # why documents are not downloaded automatically there
 
 
 def _suffix(name: str) -> str:
@@ -235,6 +238,14 @@ def store_document(db: Session, listing_id: int, name: str, data: bytes, url: st
 def collect_documents(db: Session, listing: Listing, http: httpx.Client) -> CollectReport:
     report = CollectReport()
     links: list[DocLink] = []
+    platform = platform_of(listing.url)
+    if platform is not None:
+        report.platform = platform.name
+        if not platform.auto_documents:
+            # Login-only documentation or rules that forbid automated collection: link only, owner sends the ТЗ.
+            report.needs_login = True
+            report.platform_note = platform.docs_note
+            return report
     if listing.url:
         try:
             html = get_page(http, listing.url)

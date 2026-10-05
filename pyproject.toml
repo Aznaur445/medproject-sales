@@ -63,6 +63,7 @@ ignore = ["S101", "B008"]
 "app/services/proposal_doc.py" = ["S603", "S607"]  # soffice with fixed argument list
 "app/services/documents.py" = ["S603", "S607"]  # tesseract/pdftoppm with fixed argument lists
 "app/services/tender_docs.py" = ["S603", "S607"]  # soffice --convert-to docx with fixed argument list
+"app/services/relevance.py" = ["E501"]  # regex tables read better one rule per line
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

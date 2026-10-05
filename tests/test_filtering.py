@@ -14,7 +14,7 @@ F = Filters()
         "Разработка проектной документации на капитальный ремонт поликлиники",
         "Проектирование стоматологической клиники 300 м2, разделы АР, ЭОМ, ОВиК",
         "Требуется РД для реконструкции диагностического центра (МРТ, КТ)",
-        "Ищем подрядчика: перепланировка помещений под медицинский центр",
+        "Ищем подрядчика: проект перепланировки помещений под медицинский центр",
     ],
 )
 def test_relevant(text):
@@ -28,6 +28,7 @@ def test_relevant(text):
         ("Поставка медицинского оборудования для поликлиники, проект договора прилагается", "стоп-слова"),
         ("Проектирование торгового центра", "медицинского объекта"),
         ("Уборка помещений стоматологической клиники", "проектных работ"),
+        ("Ищем подрядчика: перепланировка помещений под медицинский центр", "проектных работ"),
     ],
 )
 def test_not_relevant(text, reason):
@@ -37,7 +38,7 @@ def test_not_relevant(text, reason):
 
 def test_morphology_matches_inflected_forms():
     assert "поликлиника" in lemmas("поликлиниках")
-    assert check("Проекты больниц и госпиталей", F).relevant
+    assert check("Проектирование больниц и госпиталей", F).relevant
 
 
 def test_regions_and_budget():
@@ -62,3 +63,31 @@ def test_regions_and_budget():
 )
 def test_extract_budget(text, value):
     assert extract_budget(text) == value
+
+
+@pytest.mark.parametrize(
+    ("text", "relevant", "reason"),
+    [
+        ("Тендер: разработка проектной и рабочей документации медицинского центра 450 м2", True, None),
+        ("Разработка ПСД на кабинет МРТ", True, None),
+        ("Проектирование и строительство стоматологической клиники под ключ", True, None),
+        ("Строительно-монтажные работы в поликлинике в соответствии с проектной документацией", False, "СМР"),
+        ("Поставка медицинского оборудования для клиники. Проект договора прилагается", False, "поставка"),
+        ("Капитальный ремонт больницы, проект договора", False, "ремонт"),
+        ("Проектирование ветеринарной клиники", False, "ветеринария"),
+        ("Проектирование офисного здания", False, "не медицинский"),
+    ],
+)
+def test_strict_medical_design(text, relevant, reason):
+    from app.services.relevance import check_medical_design
+
+    result = check_medical_design(text)
+    assert result.relevant is relevant
+    if reason:
+        assert reason in result.reason
+
+
+def test_design_build_is_tagged():
+    from app.services.relevance import check_medical_design
+
+    assert check_medical_design("Проектирование и строительство клиники").tags == ["проектирование + СМР"]

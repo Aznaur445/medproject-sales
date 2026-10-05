@@ -53,6 +53,29 @@
   {% endif %}
 </div>
 
+{% set sm = (listing.extracted or {}).get('summary') %}
+{% if sm %}
+<div class="card" id="summary">
+  <div class="card-head">
+    <h3>Сводный анализ</h3>
+    <span class="badge {{ {'участвовать': 'ok', 'уточнить': 'warn', 'не участвовать': 'bad'}.get(sm.recommendation, 'warn') }}">{{ sm.recommendation }}</span>
+  </div>
+  <p><b>{{ sm.recommendation_reason }}</b></p>
+  {% if sm.summary %}<p>{{ sm.summary }}</p>{% endif %}
+  <p class="small"><span class="badge {{ 'ok' if sm.is_medical_design else 'bad' }}">{{ 'профиль: проектирование медобъекта' if sm.is_medical_design else 'вне профиля' }}</span>
+    <span class="muted">{{ sm.relevance_reason }}</span></p>
+  <div class="form-grid">
+    {% for title, value in [('Срок подачи', sm.deadline_submission), ('Срок работ', sm.deadline_works), ('Оплата', sm.payment_terms), ('Бюджет', sm.budget), ('Подача', sm.submission)] %}
+    {% if value %}<div><label>{{ title }}</label><div>{{ value }}</div></div>{% endif %}
+    {% endfor %}
+  </div>
+  {% for title, items in [('Состав работ', sm.scope_of_work), ('Требования к участнику', sm.participant_requirements), ('Критерии выбора', sm.evaluation_criteria), ('Риски', sm.risks), ('Вопросы заказчику', sm.questions)] %}
+  {% if items %}<h3 style="margin-top:14px">{{ title }}</h3><ul>{% for item in items %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+  {% endfor %}
+  <p class="small muted">Изучено документов: {{ sm.documents_reviewed|length }}{% if sm.documents_reviewed %} ({{ sm.documents_reviewed[:8]|join(', ') }}){% endif %} ·
+    {{ 'ИИ: ' ~ sm.source if sm.source != 'правила' else 'по правилам (ИИ не подключён)' }}{% if sm.ai_error %} · ИИ не ответил{% endif %}</p>
+</div>
+{% endif %}
 <div class="card" id="analysis">
   <h3>Документы и анализ {% if listing.score is not none %}<span class="badge {{ 'ok' if listing.score >= 60 else ('warn' if listing.score >= 40 else 'bad') }}">оценка {{ listing.score }}/100</span>{% endif %}</h3>
   {% if documents %}<ul class="small">{% for d in documents %}<li><a href="/files/{{ d.storage_key }}">{{ d.filename }}</a> <span class="muted">{{ (d.size_bytes or 0) // 1024 }} КБ</span></li>{% endfor %}</ul>{% endif %}

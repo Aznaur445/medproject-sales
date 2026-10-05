@@ -56,6 +56,7 @@ class AutopilotResult:
     message_id: int | None = None  # КП draft waiting for approval
     proposal_error: str | None = None
     missing_for_proposal: list[str] = field(default_factory=list)
+    summary: dict | None = None  # consolidated analysis (summary.py)
 
 
 def _confident(fields: dict, name: str, threshold: float = 0.5):
@@ -119,6 +120,20 @@ def process_listing(db: Session, listing_id: int, http: httpx.Client, *, force: 
     fields = result.analysis.get("fields", {})
     _attach_customer(db, listing, fields)
     db.flush()
+    from app.services.summary import build_summary
+
+    result.summary = build_summary(db, listing, result.analysis)
+    filters = ss.load_sync(db, ss.Filters)
+    if (
+        filters.strict_medical_design
+        and not result.summary["is_medical_design"]
+        and result.summary["source"] != "правила"
+    ):
+        # The model read all documents and says it is not design work for a medical organisation.
+        listing.status = ListingStatus.EXCLUDED
+        listing.exclusion_reason = f"вне профиля (ИИ по документам): {result.summary['relevance_reason']}"[:300]
+        db.flush()
+        return result
 
     if not auto.auto_proposal or listing.status == ListingStatus.EXCLUDED:
         return result
@@ -157,12 +172,32 @@ def summary_text(db: Session, result: AutopilotResult) -> str:
         if docs.saved:
             lines.append(f"📎 Скачано документов: {len(docs.saved)} ({escape(', '.join(docs.saved[:5]))[:300]})")
         elif docs.needs_login:
+            where = (
+                f"{escape(docs.platform)}: {escape(docs.platform_note)}"
+                if docs.platform_note
+                else ("документация доступна только после входа на площадку")
+            )
             lines.append(
-                "🔒 Документация доступна только после входа на площадку. Скачайте ТЗ и пришлите файл боту "
-                f"с подписью <b>#{listing.id}</b> — разберу и посчитаю КП."
+                f"🔒 {where}. Скачайте ТЗ и пришлите файл боту с подписью <b>#{listing.id}</b> — "
+                "разберу, сделаю сводный анализ и посчитаю КП."
             )
         else:
             lines.append("📎 Файлов документации на странице не найдено — разбор по тексту заявки.")
+    summary = result.summary
+    if listing.status == ListingStatus.EXCLUDED:
+        lines.append(f"🚫 Исключена: {escape(listing.exclusion_reason or '')}")
+        return "\n".join(lines)[:4000]
+    if summary:
+        icon = {"участвовать": "✅", "уточнить": "🟡", "не участвовать": "⛔"}.get(summary["recommendation"], "🟡")
+        why = escape(summary["recommendation_reason"][:200])
+        lines.append(f"{icon} <b>Рекомендация: {escape(summary['recommendation'])}</b> — {why}")
+        if summary.get("summary"):
+            lines.append(f"<blockquote expandable>{escape(summary['summary'][:900])}</blockquote>")
+        for title, key in (("Требования к участнику", "participant_requirements"), ("Подача", "submission")):
+            value = summary.get(key)
+            if value:
+                text = "; ".join(value[:5]) if isinstance(value, list) else str(value)
+                lines.append(f"📌 {title}: {escape(text[:300])}")
     if result.analysis:
         fields = result.analysis.get("fields", {})
         facts = []
@@ -182,12 +217,14 @@ def summary_text(db: Session, result: AutopilotResult) -> str:
                 facts.append(f"• {title}: {escape(text[:150])}")
         if facts:
             lines.append("\n".join(facts))
-        risks = [f["title"] for f in result.analysis.get("findings", []) if f.get("level") == "high"]
+        risks = (summary or {}).get("risks") or [
+            f["title"] for f in result.analysis.get("findings", []) if f.get("level") == "high"
+        ]
         if risks:
             lines.append("⚠️ Риски: " + escape(", ".join(risks[:5])))
         if listing.score is not None:
             lines.append(f"Оценка: {listing.score}/100")
-        questions = fields.get("questions") or []
+        questions = (summary or {}).get("questions") or fields.get("questions") or []
         if questions:
             lines.append("❓ Уточнить у заказчика:\n" + "\n".join(f"– {escape(q)}" for q in questions[:7]))
     if result.message_id:

@@ -197,3 +197,96 @@ def test_search_skips_video_and_social_and_upgrades_old_defaults():
 
     queries = ws.queries_of(S())
     assert queries[0].startswith("site:bidzaar.com") and len(queries) == len(ws.DEFAULT_QUERIES)
+
+
+def test_platform_registry():
+    from app.sources.platforms import platform_of
+
+    bidzaar = platform_of("https://bidzaar.com/app/process/light/0198e4db-8ec3")
+    assert bidzaar.key == "bidzaar" and bidzaar.is_procedure("https://bidzaar.com/app/process/light/1")
+    assert not bidzaar.auto_documents
+    roseltorg = platform_of("https://www.roseltorg.ru/procedure/COM12011700086")
+    assert roseltorg.is_procedure("https://www.roseltorg.ru/procedure/COM12011700086")
+    assert roseltorg.is_government("https://www.roseltorg.ru/procedure/0373100038124000001")
+    assert platform_of("https://clinic-example.ru/") is None
+
+
+def test_login_only_platform_is_not_scraped():
+    from app.services.tender_docs import collect_documents
+
+    lid = make_listing(email=None, url="https://www.b2b-center.ru/market/view.html?id=900001")
+    fetched = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        fetched.append(str(request.url))
+        return httpx.Response(200, text=PAGE)
+
+    with sync_session() as db:
+        report = collect_documents(db, db.get(Listing, lid), httpx.Client(transport=httpx.MockTransport(handler)))
+    assert fetched == [] and report.needs_login and "запрещает" in report.platform_note
+
+
+def test_email_alert_recognises_platform_links():
+    import email as email_lib
+    from email.message import EmailMessage
+    from email.policy import default as default_policy
+
+    from app.sources.email_alerts import items_from_message
+
+    def alert(message_id: str) -> EmailMessage:
+        msg = EmailMessage()
+        msg["From"], msg["Subject"], msg["Message-ID"] = "noreply@bidzaar.com", "Новые процедуры", message_id
+        msg.set_content(
+            "<table><tr><td>Проектирование медицинского центра, СМ-Клиника "
+            '<a href="https://bidzaar.com/app/process/light/abc-1">Подробнее</a></td></tr>'
+            '<tr><td><a href="https://www.roseltorg.ru/procedure/0373100038124000001">Госзакупка: проектирование '
+            "поликлиники ГБУЗ</a></td></tr></table>",
+            subtype="html",
+        )
+        return email_lib.message_from_bytes(msg.as_bytes(), policy=default_policy)
+
+    items = items_from_message(alert("<m1@bidzaar.com>"))
+    assert [i.url for i in items] == ["https://bidzaar.com/app/process/light/abc-1"]
+    assert "Проектирование медицинского центра" in items[0].title
+    again = items_from_message(alert("<m2@bidzaar.com>"))
+    assert again[0].external_id == items[0].external_id  # same tender in another digest
+
+
+def test_summary_rules_and_ai_out_of_niche_excludes():
+    import app.llm
+    from app.services.summary import TenderSummary
+
+    lid = _listing_with_url()
+    http = platform(
+        {PAGE_URL: httpx.Response(200, text=PAGE), TZ_URL: httpx.Response(200, content=docx_bytes(TZ_TEXT))}
+    )
+    with sync_session() as db:
+        result = process_listing(db, lid, http)
+        db.commit()
+        text = summary_text(db, result)
+    assert result.summary["source"] == "правила" and result.summary["is_medical_design"]
+    assert result.summary["recommendation"] in ("участвовать", "уточнить")
+    assert "Рекомендация" in text and "tz.docx" in result.summary["documents_reviewed"]
+
+    class OffNicheAI:
+        name = "fake"
+
+        def complete_json(self, prompt, document, schema):
+            if schema is TenderSummary:
+                return TenderSummary(is_medical_design=False, relevance_reason="только СМР по готовому проекту")
+            return schema()
+
+    lid2 = _listing_with_url()
+    original = app.llm.get_provider
+    app.llm.get_provider = lambda: OffNicheAI()
+    try:
+        with sync_session() as db:
+            result = process_listing(db, lid2, http)
+            db.commit()
+            text = summary_text(db, result)
+    finally:
+        app.llm.get_provider = original
+    with sync_session() as db:
+        listing = db.get(Listing, lid2)
+        assert listing.status == ListingStatus.EXCLUDED and "только СМР" in listing.exclusion_reason
+    assert result.message_id is None and "Исключена" in text

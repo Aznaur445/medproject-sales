@@ -156,16 +156,17 @@ class Filters(BaseModel):
     work_words: list[str] = Field(
         default_factory=lambda: [
             "проектирование",
-            "проект",
+            "проектные работы",
+            "проектно-изыскательские работы",
             "проектная документация",
             "рабочая документация",
             "ПД",
             "РД",
-            "реконструкция",
-            "капитальный ремонт",
-            "капремонт",
-            "перепланировка",
-            "обследование",
+            "проект перепланировки",
+            "проектно-сметная документация",
+            "ПСД",
+            "эскизный проект",
+            "дизайн-проект",
             "технологические решения",
             "медицинская технология",
         ]
@@ -185,7 +186,8 @@ class Filters(BaseModel):
             "операционная",
             "чистые помещения",
             "медицинская организация",
-            "медицинский",
+            "медицинский кабинет",
+            "медицинское учреждение",
             "МРТ",
             "КТ",
             "рентген",
@@ -193,7 +195,6 @@ class Filters(BaseModel):
             "женская консультация",
             "реабилитационный центр",
             "санаторий",
-            "ветеринарная клиника",
         ]
     )
     stop_words: list[str] = Field(
@@ -212,6 +213,8 @@ class Filters(BaseModel):
             "ремонт оборудования",
             "техническое обслуживание",
             "строительно-монтажные работы",
+            "ветеринарная клиника",
+            "ветеринарный",
         ]
     )
     regions_allow: list[str] = Field(default_factory=list)  # empty = all Russia
@@ -220,6 +223,8 @@ class Filters(BaseModel):
     budget_max: int | None = None
     keep_unknown_budget: bool = True
     notify_new: bool = True
+    # Niche guard: only design work for medical organisations (see relevance.py)
+    strict_medical_design: bool = True
 
 
 GROUPS["filters"] = Filters

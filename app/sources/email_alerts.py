@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 from app.core.security import decrypt_secret
 from app.models import Source
 from app.sources.base import ConfigField, Connector, FoundItem, SourceError, clean, register, stable_id
+from app.sources.platforms import platform_of
 
 MAX_MESSAGES = 50
 SKIP_LINK_WORDS = (
@@ -70,11 +71,20 @@ def items_from_message(message: EmailMessage, sender_note: str = "") -> list[Fou
         for link in soup.find_all("a", href=True):
             href = link["href"]
             title = clean(link.get_text(" "))
-            if not href.startswith("http") or len(title) < 25 or any(w in title.lower() for w in SKIP_LINK_WORDS):
+            platform = platform_of(href)
+            is_procedure = platform is not None and platform.is_procedure(href)
+            if not href.startswith("http") or any(w in title.lower() for w in SKIP_LINK_WORDS):
                 continue
+            if platform is not None and platform.is_government(href):
+                continue  # 44-ФЗ notice on a mixed platform
             container = link.find_parent(["tr", "li", "p", "div"]) or link
             context = clean(container.get_text(" "))
-            key = stable_id(message_id, href)
+            if len(title) < 25:
+                if not is_procedure:
+                    continue
+                title = context[:300] or title  # «Подробнее» links of a known platform: take the row text
+            # A known procedure keeps one id across digests, so the same tender is not stored twice.
+            key = stable_id(href) if is_procedure else stable_id(message_id, href)
             if key in seen:
                 continue
             seen.add(key)
@@ -97,8 +107,9 @@ class EmailAlertsConnector(Connector):
     title = "Рассылки площадок (почтовый ящик)"
     kind = "email_alert"
     help = (
-        "Подпишите отдельный ящик на рассылки коммерческих закупок площадок (B2B-Center, Bicotender, Фабрикант, "
-        "Tenderpro…). Сервис читает непрочитанные письма и разбирает ссылки на закупки. Нужен пароль приложения."
+        "Подпишите отдельный ящик на уведомления площадок (Bidzaar, B2B-Center, Фабрикант, Tender.Pro, ТЭК-Торг, "
+        "Росэлторг…) по словам «проектирование», «клиника», «медицинский центр». Сервис читает непрочитанные письма, "
+        "узнаёт ссылки на процедуры известных площадок и запускает обработку. Нужен пароль приложения."
     )
     config_fields = [
         ConfigField("user", "Адрес ящика", placeholder="tenders@project-med.ru"),

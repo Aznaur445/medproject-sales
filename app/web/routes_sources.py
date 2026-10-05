@@ -12,6 +12,7 @@ from app.services import runtime_config
 from app.services import settings_store as ss
 from app.services.audit import audit_sync
 from app.sources import REGISTRY, get_connector
+from app.sources.platforms import PLATFORMS
 from app.web.auth import current_user, require_owner, verify_csrf
 from app.web.routes_sales import _flash, in_db, to_local
 from app.web.templating import render
@@ -41,6 +42,7 @@ async def sources_page(request: Request, user: User = Depends(current_user)):
         sources=sources,
         counts=counts,
         has_web_search=any(s.connector == "web_search" and s.enabled for s in sources),
+        platforms=PLATFORMS,
         search_ready=search_ready,
         connectors=REGISTRY,
         to_local=to_local,
@@ -267,6 +269,7 @@ async def filters_save(request: Request, user: User = Depends(require_owner)):
         budget_max=num("budget_max"),
         keep_unknown_budget=form.get("keep_unknown_budget") == "1",
         notify_new=form.get("notify_new") == "1",
+        strict_medical_design=form.get("strict_medical_design") == "1",
     )
     if not value.work_words or not value.object_words:
         _flash(request, "Списки «работы» и «объекты» не могут быть пустыми", "bad")

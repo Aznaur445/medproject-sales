@@ -17,6 +17,7 @@ from app.services import settings_store as ss
 from app.services.filtering import check, extract_budget, lemmas
 from app.services.gov_filter import government_reason
 from app.services.listings import add_email_channel, get_or_create_org
+from app.services.relevance import check_medical_design
 from app.sources.base import FoundItem
 
 FUZZY_THRESHOLD = 90
@@ -201,12 +202,17 @@ def ingest(db: Session, source: Source, items: list[FoundItem]) -> IngestStats:
             listing.status = ListingStatus.EXCLUDED
             listing.exclusion_reason = item.exclude_reason[:300]
             stats.new_excluded += 1
+        elif filters.strict_medical_design and not (niche := check_medical_design(full_text)).relevant:
+            listing.status = ListingStatus.EXCLUDED
+            listing.exclusion_reason = f"вне профиля: {niche.reason}"[:300]
+            stats.new_excluded += 1
         elif not result.relevant:
             listing.status = ListingStatus.EXCLUDED
             listing.exclusion_reason = "; ".join(result.reasons)[:300]
             stats.new_excluded += 1
         else:
             listing.status = ListingStatus.FOUND
+            listing.tags = check_medical_design(full_text).tags
         db.add(listing)
         db.flush()
         _add_version(db, listing, snap, {})

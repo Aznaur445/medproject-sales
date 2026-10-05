@@ -30,11 +30,14 @@ from app.sources.base import (
     register,
     stable_id,
 )
+from app.sources.platforms import platform_of, platform_queries
 
 log = get_logger(__name__)
 
-# Commercial tender platforms first: their procedure pages carry the ТЗ and documentation.
-PLATFORM_QUERIES = [
+# Commercial tender platforms first (registry in platforms.py): their procedure pages carry the documentation.
+PLATFORM_QUERIES = platform_queries()
+# The previous platform set: sources still using it are switched to the current defaults automatically.
+PLATFORM_QUERIES_V2 = [
     "site:bidzaar.com проектирование медицинского центра",
     "site:bidzaar.com проектирование клиники",
     "site:b2b-center.ru проектирование медицинского центра",
@@ -123,7 +126,7 @@ def _int(value: Any, default: int, low: int, high: int) -> int:
 
 def queries_of(source: Source) -> list[str]:
     raw = source.config.get("queries") or "\n".join(DEFAULT_QUERIES)
-    if str(raw).strip() == "\n".join(DEFAULT_QUERIES_V1):
+    if str(raw).strip() in ("\n".join(DEFAULT_QUERIES_V1), "\n".join(PLATFORM_QUERIES_V2 + GENERAL_QUERIES)):
         raw = "\n".join(DEFAULT_QUERIES)
     seen, result = set(), []
     for line in str(raw).splitlines():
@@ -262,14 +265,17 @@ class WebSearchConnector(Connector):
             provider = get_provider()
         opened = 0
         for result in self.fetch(source, http):
+            platform = platform_of(result.url)
             if _is_gov_domain(result.url) or _is_non_text(result.url):
+                continue
+            if platform is not None and platform.is_government(result.url):
                 continue
             if result.modified_at and result.modified_at < oldest:
                 continue
             item = next(iter(self.parse(result, source)))
             if item.external_id in known:
                 continue  # already a listing: no page download, no AI call
-            if opened < max_pages:
+            if opened < max_pages and (platform is None or platform.auto_documents):
                 opened += 1
                 try:
                     text = page_text(get_page(http, result.url))

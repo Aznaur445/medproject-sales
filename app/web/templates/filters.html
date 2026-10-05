@@ -21,6 +21,7 @@
   </div>
   <label class="check"><input type="checkbox" name="keep_unknown_budget" value="1" {{ 'checked' if f.keep_unknown_budget }}> Оставлять заявки без указанного бюджета</label>
   <label class="check"><input type="checkbox" name="notify_new" value="1" {{ 'checked' if f.notify_new }}> Сообщать о новых заявках в Telegram</label>
+  <label class="check"><input type="checkbox" name="strict_medical_design" value="1" {{ 'checked' if f.strict_medical_design }}> <span><b>Только проектирование для медицинских организаций</b> — отсеивать стройку/ремонт без проектирования, поставки, «проект договора», немедицинские и ветеринарные объекты</span></label>
   {% if user.role == 'owner' %}<button type="submit" style="margin-top:8px">Сохранить</button>{% endif %}
 </form>
 {% endblock %}
