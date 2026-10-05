@@ -151,6 +151,8 @@ mkdir -p /var/lib/medproject-update
 CODE_SHA=$(basename "${CODE_URL:-}")
 [[ "$CODE_SHA" =~ ^[0-9a-f]{40}$ ]] && echo "$CODE_SHA" > /var/lib/medproject-update/current
 chown 1000:1000 /var/lib/medproject-update  # uid of the "app" user in the image
+chmod 755 /var/lib/medproject-update
+chmod 644 /var/lib/medproject-update/current 2>/dev/null || true  # the cloud-init wrapper runs with umask 077
 install -m 0755 deploy/updater.sh /usr/local/bin/medproject-update
 cat > /etc/medproject-update.env <<CONF
 APP_DIR=${APP_DIR}
