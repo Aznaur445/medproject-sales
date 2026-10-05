@@ -253,3 +253,15 @@ class Scoring(BaseModel):
 
 GROUPS["capabilities"] = Capabilities
 GROUPS["scoring"] = Scoring
+
+
+class Automation(BaseModel):
+    """What happens with a new suitable listing without the owner (nothing is ever sent without approval)."""
+
+    download_documents: bool = True  # open the listing page, download ТЗ and other documentation
+    auto_analyze: bool = True  # read the documents, extract fields, risks, questions
+    auto_proposal: bool = True  # when the area is known: estimate + КП draft to the owner for approval
+    min_score_for_proposal: int = 0
+
+
+GROUPS["automation"] = Automation

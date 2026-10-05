@@ -38,7 +38,9 @@ async def settings_page(request: Request, user: User = Depends(current_user)):
 
     req, defaults, rules = await in_db(load)
     integrations = await in_db(_integrations_view)
-    caps, scoring = await in_db(lambda db: (ss.load_sync(db, ss.Capabilities), ss.load_sync(db, ss.Scoring)))
+    caps, scoring, automation = await in_db(
+        lambda db: (ss.load_sync(db, ss.Capabilities), ss.load_sync(db, ss.Scoring), ss.load_sync(db, ss.Automation))
+    )
     return render(
         request,
         "settings.html",
@@ -49,6 +51,7 @@ async def settings_page(request: Request, user: User = Depends(current_user)):
         flash=request.session.pop("flash", None),
         caps=caps,
         scoring=scoring,
+        automation=automation,
         **integrations,
     )
 
@@ -340,6 +343,29 @@ async def save_integrations(request: Request, user: User = Depends(require_owner
     runtime_config.reset_cache()
     _flash(request, "Подключения сохранены. Бот подхватит изменения в течение минуты.")
     return RedirectResponse("/settings#integrations", status_code=303)
+
+
+@router.post("/settings/automation")
+async def save_automation(request: Request, user: User = Depends(require_owner)):
+    form = await request.form()
+    try:
+        min_score = max(0, min(100, int(str(form.get("min_score_for_proposal") or "0"))))
+    except ValueError:
+        min_score = 0
+    value = ss.Automation(
+        download_documents=form.get("download_documents") == "1",
+        auto_analyze=form.get("auto_analyze") == "1",
+        auto_proposal=form.get("auto_proposal") == "1",
+        min_score_for_proposal=min_score,
+    )
+
+    def run(db):
+        ss.save_sync(db, value, user.id)
+        audit_sync(db, "settings_automation", actor="web", user_id=user.id, details=value.model_dump())
+
+    await in_db(run)
+    _flash(request, "Настройки автоматической обработки сохранены.")
+    return RedirectResponse("/settings#automation", status_code=303)
 
 
 LLM_PROVIDERS = {"none": "Без ИИ (только правила)", "deepseek": "DeepSeek", "yandexgpt": "YandexGPT"}

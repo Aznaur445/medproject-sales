@@ -62,6 +62,7 @@ ignore = ["S101", "B008"]
 "app/ops/backup.py" = ["S603", "S607"]  # pg_dump/pg_restore with fixed argument lists
 "app/services/proposal_doc.py" = ["S603", "S607"]  # soffice with fixed argument list
 "app/services/documents.py" = ["S603", "S607"]  # tesseract/pdftoppm with fixed argument lists
+"app/services/tender_docs.py" = ["S603", "S607"]  # soffice --convert-to docx with fixed argument list
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

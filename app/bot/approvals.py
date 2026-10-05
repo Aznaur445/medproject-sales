@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandObject
+from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -419,7 +419,99 @@ async def cmd_add(message: Message, command: CommandObject) -> None:
     if excluded:
         await message.answer(f"Заявка #{listing_id} добавлена, но исключена: {excluded}")
     else:
+        from app.worker.tasks_sales import autopilot_task
+
+        autopilot_task.delay(listing_id, force=True)
         await message.answer(
-            f"Заявка #{listing_id} добавлена. Заполните заказчика, площадь и e-mail в панели, "
-            f"затем нажмите «Рассчитать»."
+            f"Заявка #{listing_id} добавлена. Открываю ссылку, скачиваю документацию и считаю КП — "
+            f"отчёт придёт сюда. Если документы закрыты, пришлите файл ТЗ с подписью #{listing_id}."
         )
+
+
+# --- documents and area from the owner -------------------------------------------------------------
+
+LISTING_REF_RE = re.compile(r"#(\d+)")
+BOT_FILE_LIMIT = 20 * 1024 * 1024  # Bot API getFile limit
+
+
+def _listing_ref(message: Message) -> int | None:
+    for text in (message.caption, message.reply_to_message and message.reply_to_message.text):
+        match = LISTING_REF_RE.search(text or "")
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _store_files(listing_id: int, name: str, data: bytes) -> int | None:
+    from app.services.tender_docs import store_document, unpack
+
+    with sync_session() as db:
+        if db.get(Listing, listing_id) is None:
+            return None
+        stored = sum(store_document(db, listing_id, inner, content) for inner, content in unpack(name, data))
+        audit_sync(db, "document_uploaded", actor="bot", entity_type="listing", entity_id=listing_id)
+        db.commit()
+        return stored
+
+
+@router.message(StateFilter(None), F.document)
+async def on_document(message: Message) -> None:
+    from app.services.storage import safe_name
+    from app.services.tender_docs import DOC_EXT
+    from app.worker.tasks_sales import autopilot_task
+
+    listing_id = _listing_ref(message)
+    if listing_id is None:
+        await message.answer("К какой заявке файл? Пришлите его ещё раз с подписью, например: #12")
+        return
+    doc = message.document
+    name = safe_name(doc.file_name or "document")
+    if "." + name.rsplit(".", 1)[-1].lower() not in DOC_EXT:
+        await message.answer("Поддерживаются PDF, DOCX, DOC, RTF, XLSX, ZIP, TXT и сканы (JPG, PNG).")
+        return
+    if (doc.file_size or 0) > BOT_FILE_LIMIT:
+        await message.answer("Файл больше 20 МБ — загрузите его в панели, в карточке заявки.")
+        return
+    buffer = await message.bot.download(doc.file_id)
+    stored = await in_thread(_store_files, listing_id, name, buffer.read())
+    if stored is None:
+        await message.answer(f"Заявка #{listing_id} не найдена.")
+        return
+    autopilot_task.delay(listing_id, force=True)
+    await message.answer(f"📎 Файл добавлен к заявке #{listing_id}. Разбираю ТЗ и считаю КП — отчёт придёт сюда.")
+
+
+def _set_area(listing_id: int, area: Decimal, tg_id: int) -> bool:
+    with sync_session() as db:
+        listing = db.get(Listing, listing_id)
+        if listing is None:
+            return False
+        listing.area_m2 = area
+        audit_sync(
+            db,
+            "listing_area_set",
+            actor="bot",
+            user_id=_user_id(db, tg_id),
+            entity_type="listing",
+            entity_id=listing_id,
+            details={"area_m2": str(area)},
+        )
+        db.commit()
+        return True
+
+
+@router.message(StateFilter(None), F.text.regexp(r"^\s*#\d+\s"))
+async def on_area_reply(message: Message) -> None:
+    from app.services.autopilot import parse_area_reply
+    from app.worker.tasks_sales import autopilot_task
+
+    parsed = parse_area_reply(message.text)
+    if parsed is None:
+        await message.answer("Не понял. Площадь пишите так: #12 450 (номер заявки и площадь в м²).")
+        return
+    listing_id, area = parsed
+    if not await in_thread(_set_area, listing_id, area, message.from_user.id):
+        await message.answer(f"Заявка #{listing_id} не найдена.")
+        return
+    autopilot_task.delay(listing_id, force=True)
+    await message.answer(f"Площадь {area} м² сохранена для заявки #{listing_id}. Считаю КП — карточка придёт сюда.")

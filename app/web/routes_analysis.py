@@ -1,6 +1,5 @@
 """Panel: documents, analysis results and the case-study registry (stage 4)."""
 
-import hashlib
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -9,7 +8,7 @@ from sqlalchemy import select
 from starlette.datastructures import UploadFile
 
 from app.core.numbers import parse_decimal
-from app.models import CaseStudy, Listing, ListingDocument, User
+from app.models import CaseStudy, Listing, User
 from app.services import settings_store as ss
 from app.services import storage
 from app.services.audit import audit_sync
@@ -18,7 +17,10 @@ from app.web.routes_sales import _flash, in_db
 from app.web.templating import render
 
 router = APIRouter(dependencies=[Depends(verify_csrf)])
-ALLOWED = {".pdf", ".docx", ".xlsx", ".xlsm", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".txt"}
+ALLOWED = {
+    *(".pdf", ".docx", ".doc", ".rtf", ".odt", ".zip", ".xlsx", ".xlsm", ".txt"),
+    *(".png", ".jpg", ".jpeg", ".tif", ".tiff"),
+}
 MAX_BYTES = 50 * 1024 * 1024
 
 
@@ -34,23 +36,14 @@ async def upload_documents(request: Request, listing_id: int, user: User = Depen
         if suffix not in ALLOWED or len(data) > MAX_BYTES:
             skipped.append(upload.filename)
             continue
-        digest = hashlib.sha256(data).hexdigest()
-        key = storage.save_bytes(f"listings/{listing_id}/docs/{digest[:12]}_{name}", data)
 
-        def run(db, name=name, key=key, digest=digest, size=len(data)):
+        def run(db, name=name, data=data):
+            from app.services.tender_docs import store_document, unpack
+
             if db.get(Listing, listing_id) is None:
                 raise HTTPException(404)
-            exists = db.execute(
-                select(ListingDocument).where(
-                    ListingDocument.listing_id == listing_id, ListingDocument.sha256 == digest
-                )
-            ).scalar_one_or_none()
-            if exists is None:
-                db.add(
-                    ListingDocument(
-                        listing_id=listing_id, filename=name, storage_key=key, sha256=digest, size_bytes=size, parsed={}
-                    )
-                )
+            stored = sum(store_document(db, listing_id, inner, content) for inner, content in unpack(name, data))
+            if stored:
                 audit_sync(
                     db, "document_uploaded", actor="web", user_id=user.id, entity_type="listing", entity_id=listing_id
                 )
@@ -60,7 +53,21 @@ async def upload_documents(request: Request, listing_id: int, user: User = Depen
     msg = f"Загружено файлов: {saved}."
     if skipped:
         msg += " Пропущены (формат или размер больше 50 МБ): " + ", ".join(skipped)
-    _flash(request, msg + " Нажмите «Проанализировать».", "warn" if skipped else "ok")
+    if saved:
+        from app.worker.tasks_sales import autopilot_task
+
+        autopilot_task.delay(listing_id, force=True)
+        msg += " Разбор и расчёт КП запущены — результат придёт в Telegram и появится здесь."
+    _flash(request, msg, "warn" if skipped else "ok")
+    return RedirectResponse(f"/listings/{listing_id}#analysis", status_code=303)
+
+
+@router.post("/listings/{listing_id}/autopilot")
+async def run_autopilot(request: Request, listing_id: int, user: User = Depends(require_owner)):
+    from app.worker.tasks_sales import autopilot_task
+
+    autopilot_task.delay(listing_id, force=True)
+    _flash(request, "Запущено: скачиваю документацию, разбираю и считаю КП. Отчёт придёт в Telegram через 1–3 минуты.")
     return RedirectResponse(f"/listings/{listing_id}#analysis", status_code=303)
 
 

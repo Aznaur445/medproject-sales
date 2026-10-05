@@ -33,7 +33,33 @@ from app.sources.base import (
 
 log = get_logger(__name__)
 
-DEFAULT_QUERIES = [
+# Commercial tender platforms first: their procedure pages carry the ТЗ and documentation.
+PLATFORM_QUERIES = [
+    "site:bidzaar.com проектирование медицинского центра",
+    "site:bidzaar.com проектирование клиники",
+    "site:b2b-center.ru проектирование медицинского центра",
+    "site:b2b-center.ru проектирование клиники",
+    "site:tender.pro проектирование клиники",
+    "site:fabrikant.ru проектирование медицинского центра",
+    "site:etpgpb.ru проектирование клиники",
+    "site:tektorg.ru проектирование медицинского центра",
+    "site:roseltorg.ru коммерческая закупка проектирование клиники",
+]
+GENERAL_QUERIES = [
+    "тендер на проектирование клиники",
+    "требуется проектирование медицинского центра",
+    "запрос коммерческих предложений проектирование медицинского центра",
+    "техническое задание на проектирование медицинского центра",
+    "конкурс на проектирование стоматологической клиники",
+    "тендер проектирование лаборатории",
+    "тендер проектирование диагностического центра МРТ КТ",
+    "тендер проектирование реабилитационного центра",
+    "ищем проектировщика для клиники",
+    "приглашаем к участию в тендере проектирование клиники",
+]
+DEFAULT_QUERIES = PLATFORM_QUERIES + GENERAL_QUERIES
+# The first default set: sources still using it are switched to the current one automatically.
+DEFAULT_QUERIES_V1 = [
     "требуется проектирование медицинского центра",
     "тендер на проектирование клиники",
     "запрос коммерческих предложений проектирование медицинского центра",
@@ -50,6 +76,29 @@ DEFAULT_QUERIES = [
     "site:b2b-center.ru проектирование медицинского центра",
     "site:tender.pro проектирование клиники",
 ]
+# Only requests and written information: video, social networks, job boards, maps, reviews and boards whose
+# rules forbid automated collection are skipped without spending a page download or an AI call.
+NON_TEXT_HOSTS = (
+    "youtube.com",
+    "youtu.be",
+    "rutube.ru",
+    "vk.com",
+    "vkvideo.ru",
+    "ok.ru",
+    "dzen.ru",
+    "instagram.com",
+    "facebook.com",
+    "tiktok.com",
+    "pinterest.com",
+    "pinterest.ru",
+    "avito.ru",
+    "hh.ru",
+    "superjob.ru",
+    "otzovik.com",
+    "2gis.ru",
+    "wikipedia.org",
+)
+NON_TEXT_SUFFIXES = (".jpg", ".jpeg", ".png", ".gif", ".mp4", ".avi", ".mov", ".mp3")
 GOV_DOMAINS = ("zakupki.gov.ru", "torgi.gov.ru", "bus.gov.ru")
 MAX_QUERIES = 40
 MAX_LLM_TEXT = 8000
@@ -74,6 +123,8 @@ def _int(value: Any, default: int, low: int, high: int) -> int:
 
 def queries_of(source: Source) -> list[str]:
     raw = source.config.get("queries") or "\n".join(DEFAULT_QUERIES)
+    if str(raw).strip() == "\n".join(DEFAULT_QUERIES_V1):
+        raw = "\n".join(DEFAULT_QUERIES)
     seen, result = set(), []
     for line in str(raw).splitlines():
         line = line.strip()
@@ -81,6 +132,14 @@ def queries_of(source: Source) -> list[str]:
             seen.add(line.lower())
             result.append(line)
     return result[:MAX_QUERIES]
+
+
+def _is_non_text(url: str) -> bool:
+    parts = urlsplit(url)
+    host = parts.netloc.lower().split(":")[0]
+    if any(host == h or host.endswith("." + h) for h in NON_TEXT_HOSTS):
+        return True
+    return parts.path.lower().endswith(NON_TEXT_SUFFIXES)
 
 
 def _is_gov_domain(url: str) -> bool:
@@ -104,10 +163,11 @@ class WebSearchConnector(Connector):
     title = "Поиск в интернете (Яндекс)"
     kind = "web_page"
     help = (
-        "Сервис сам ищет в интернете заявки на проектирование медицинских объектов по списку запросов через "
-        "официальный Yandex Search API. Нужны ключ и каталог Yandex Cloud (Настройки → ИИ и поиск). Каждый запрос "
-        "платный (тариф Yandex Cloud): 15 запросов 2 раза в день ≈ 900 запросов в месяц. Реклама проектировщиков, "
-        "статьи и госзакупки отсеиваются автоматически."
+        "Сервис сам ищет в интернете заявки на проектирование медицинских объектов (Bidzaar, B2B-Center, Tender.Pro "
+        "и др. коммерческие площадки + общий поиск) через официальный Yandex Search API. Нужны ключ и каталог "
+        "Yandex Cloud (Настройки → ИИ и поиск). Каждый запрос платный (тариф Yandex Cloud): 19 запросов 2 раза в "
+        "день ≈ 1150 запросов в месяц. Реклама проектировщиков, статьи, видео, соцсети и госзакупки отсеиваются; "
+        "по каждой подходящей заявке скачивается документация, разбирается ТЗ и готовится КП на согласование."
     )
     config_fields = [
         ConfigField(
@@ -170,7 +230,7 @@ class WebSearchConnector(Connector):
             provider = get_provider()
         opened = 0
         for result in self.fetch(source, http):
-            if _is_gov_domain(result.url):
+            if _is_gov_domain(result.url) or _is_non_text(result.url):
                 continue
             if result.modified_at and result.modified_at < oldest:
                 continue

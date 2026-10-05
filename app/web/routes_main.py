@@ -17,7 +17,10 @@ router = APIRouter()
 @router.get("/health/live")
 async def live():
     """Liveness: the process answers. Used by Docker healthcheck of the api container."""
-    return {"status": "ok"}
+    from app.services.updates import current_version
+
+    version = current_version()
+    return {"status": "ok", "version": version[:7] if version else None}
 
 
 @router.get("/health")

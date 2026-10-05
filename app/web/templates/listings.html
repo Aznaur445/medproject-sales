@@ -16,7 +16,7 @@
     {% for listing, org_name in rows %}
     <tr>
       <td>{{ listing.id }}</td>
-      <td><a href="/listings/{{ listing.id }}">{{ listing.title }}</a>
+      <td><a href="/listings/{{ listing.id }}">{{ listing.title }}</a>{% if listing.url %} <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer" title="Открыть на площадке">🔗</a>{% endif %}
         {% if listing.exclusion_reason %}<div class="small muted">{{ listing.exclusion_reason }}</div>{% endif %}</td>
       <td>{{ org_name or '—' }}</td>
       <td><span class="badge">{{ status_names.get(listing.status, listing.status) }}</span></td>

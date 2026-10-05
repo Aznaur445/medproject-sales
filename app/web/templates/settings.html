@@ -70,6 +70,20 @@
   {% endif %}
 </div>
 
+<div class="card" id="automation">
+  <h3>Автоматическая обработка заявок</h3>
+  <p class="small muted">Что сервис делает сам с каждой новой подходящей заявкой. Клиенту ничего не отправляется без вашего «Согласовано».</p>
+  <form method="post" action="/settings/automation">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="check"><input type="checkbox" name="download_documents" value="1" {{ 'checked' if automation.download_documents }}> Открывать страницу заявки и скачивать ТЗ и документацию (только открытые файлы)</label>
+    <label class="check"><input type="checkbox" name="auto_analyze" value="1" {{ 'checked' if automation.auto_analyze }}> Разбирать заявку и документы: площадь, разделы, сроки, риски, вопросы заказчику</label>
+    <label class="check"><input type="checkbox" name="auto_proposal" value="1" {{ 'checked' if automation.auto_proposal }}> Если площадь известна — считать стоимость и готовить КП на согласование</label>
+    <div class="form-grid"><div><label>Готовить КП, только если оценка заявки не ниже</label>
+      <input name="min_score_for_proposal" type="number" min="0" max="100" value="{{ automation.min_score_for_proposal }}"></div></div>
+    {% if owner %}<button type="submit" style="margin-top:8px">Сохранить</button>{% endif %}
+  </form>
+</div>
+
 <div class="card" id="sending">
   <h3>Отправка</h3>
   <form method="post" action="/settings/pause" class="row" style="margin-bottom:12px">

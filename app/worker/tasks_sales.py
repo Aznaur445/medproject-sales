@@ -169,7 +169,7 @@ def run_source_task(source_id: int) -> dict:
         if result.stats and result.stats.new_relevant:
             for listing_id in result.stats.new_relevant[:10]:
                 listing = db.get(Listing, listing_id)
-                new_titles.append((listing_id, listing.title))
+                new_titles.append((listing_id, listing.title, listing.url))
         changes = result.stats.changed[:10] if result.stats else []
     if result.circuit_opened:
         alert(
@@ -179,8 +179,13 @@ def run_source_task(source_id: int) -> dict:
         )
     if new_titles and notify_new:
         lines = [f"🔎 Новые заявки ({name}): {len(result.stats.new_relevant)}"]
-        lines += [f"#{lid} {title[:150]}" for lid, title in new_titles]
-        send_owner_message("\n".join(lines) + "\nПодробности: /today или в панели «Заявки».")
+        lines += [f"#{lid} {title[:150]}" + (f"\n🔗 {url}" if url else "") for lid, title, url in new_titles]
+        send_owner_message(
+            "\n".join(lines) + "\nСкачиваю документацию и разбираю — по каждой заявке придёт отдельный отчёт."
+        )
+    if result.stats:
+        for index, listing_id in enumerate(result.stats.new_relevant):
+            autopilot_task.apply_async((listing_id,), countdown=20 * index)
     for listing_id, change in changes:
         text = "; ".join(f"{field}: {old or '—'} → {new or '—'}" for field, (old, new) in change.items())
         send_owner_message(f"✏️ Изменилась заявка #{listing_id}: {text[:800]}")
@@ -223,3 +228,30 @@ def analyze_listing_task(listing_id: int) -> dict:
         lines.append(f"ИИ недоступен ({result['ai_error'][:80]}), использован разбор по правилам.")
     send_owner_message("\n".join(lines))
     return {"score": score}
+
+
+# --- autopilot: documents -> analysis -> КП draft ------------------------------------------------
+
+
+@celery.task(bind=True, acks_late=False, max_retries=2, default_retry_delay=300)
+def autopilot_task(self, listing_id: int, force: bool = False) -> dict:
+    import httpx
+
+    from app.services.autopilot import process_listing, summary_text
+
+    try:
+        with httpx.Client(timeout=60) as http, sync_session() as db:
+            result = process_listing(db, listing_id, http, force=force)
+            db.commit()
+            text = None if result.skipped else summary_text(db, result)
+    except Exception as exc:
+        log.exception("autopilot_failed", listing_id=listing_id)
+        if self.request.retries >= self.max_retries:
+            alert("Автообработка заявки не удалась", f"Заявка #{listing_id}: {type(exc).__name__}")
+            return {"ok": False}
+        raise self.retry(exc=exc) from exc
+    if text:
+        telegram_call("sendMessage", {"text": text, "parse_mode": "HTML", "disable_web_page_preview": True})
+    if result.message_id:
+        send_card(result.message_id)
+    return {"ok": True, "skipped": result.skipped, "message_id": result.message_id}

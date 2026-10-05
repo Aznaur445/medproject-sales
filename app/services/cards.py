@@ -35,6 +35,8 @@ def card_text(db: Session, message: Message) -> str:
     lines = ["📋 <b>КП на согласование</b>"]
     if listing:
         lines.append(f"<b>{escape(listing.title)}</b>")
+        if listing.url:
+            lines.append(f'🔗 <a href="{escape(listing.url, quote=True)}">Заявка на площадке</a>')
     if org:
         lines.append(f"Заказчик: {escape(org.name)}")
     if listing:

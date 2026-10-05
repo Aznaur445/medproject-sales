@@ -5,7 +5,7 @@
 <h2>#{{ listing.id }} {{ listing.title }}</h2>
 <p><span class="badge">{{ status_names.get(listing.status, listing.status) }}</span>
 {% if listing.exclusion_reason %} <span class="badge bad">{{ listing.exclusion_reason }}</span>{% endif %}
-{% if listing.url %} · <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer">источник</a>{% endif %}
+{% if listing.url %} · <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer"><b>🔗 открыть заявку на площадке</b></a>{% endif %}
 {% if listing.merged_into_id %} · <a href="/listings/{{ listing.merged_into_id }}">основная заявка #{{ listing.merged_into_id }}</a>{% endif %}</p>
 {% if listing.status == 'excluded' and owner and not (listing.exclusion_reason and 'гос' in listing.exclusion_reason) %}
 <form method="post" action="/listings/{{ listing.id }}/restore"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -59,13 +59,19 @@
   {% if owner %}
   <form method="post" action="/listings/{{ listing.id }}/documents" enctype="multipart/form-data" class="row">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input type="file" name="files" multiple accept=".pdf,.docx,.xlsx,.xlsm,.png,.jpg,.jpeg,.tif,.tiff,.txt" style="width:auto">
+    <input type="file" name="files" multiple accept=".pdf,.docx,.doc,.rtf,.odt,.zip,.xlsx,.xlsm,.png,.jpg,.jpeg,.tif,.tiff,.txt" style="width:auto">
     <button class="secondary" type="submit">Загрузить ТЗ / документы</button>
   </form>
-  <form method="post" action="/listings/{{ listing.id }}/analyze" style="margin-top:8px">
+  <div class="row" style="margin-top:8px">
+  <form method="post" action="/listings/{{ listing.id }}/autopilot">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit">{{ 'Проанализировать заново' if listing.extracted.get('fields') else 'Проанализировать' }}</button>
+    <button type="submit">Скачать документацию, разобрать и посчитать КП</button>
   </form>
+  <form method="post" action="/listings/{{ listing.id }}/analyze">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="secondary" type="submit">{{ 'Проанализировать заново' if listing.extracted.get('fields') else 'Только анализ' }}</button>
+  </form>
+  </div>
   {% endif %}
   {% set ex = listing.extracted or {} %}
   {% if ex.get('fields') %}

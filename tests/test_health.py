@@ -6,7 +6,7 @@ from app.worker import tasks
 
 
 async def test_live(client):
-    assert (await client.get("/health/live")).json() == {"status": "ok"}
+    assert (await client.get("/health/live")).json()["status"] == "ok"
 
 
 async def test_health_degraded_without_heartbeats(client):
