@@ -1,6 +1,7 @@
 #!/bin/bash
 # First boot of a Timeweb server (passed as cloud-init user data with the variables below filled in).
-# Installs Docker, firewall and fail2ban, downloads the code from the private S3 bucket, writes .env,
+# Installs Docker, firewall and fail2ban, downloads the code (embedded archive, CODE_URL such as a GitHub
+# tarball of a pinned commit, or the private S3 bucket), writes .env,
 # starts the stack and installs the update timer. Progress is reported as marker objects in
 # s3://$S3_BUCKET/deploy/status/ so the setup can be followed through the Timeweb API without SSH.
 set -uo pipefail
@@ -12,7 +13,7 @@ S3_BUCKET="__S3_BUCKET__"
 S3_ACCESS="__S3_ACCESS__"
 S3_SECRET="__S3_SECRET__"
 CODE_KEY="__CODE_KEY__"
-CODE_URL="__CODE_URL__"  # optional presigned URL (no signing needed on the server)
+CODE_URL="__CODE_URL__"  # optional tar.gz URL: presigned S3 URL or https://codeload.github.com/OWNER/REPO/tar.gz/SHA
 STATUS_TOKEN="__STATUS_TOKEN__"  # private path of the progress page https://DOMAIN/STATUS_TOKEN/log.txt
 DOMAIN="__DOMAIN__"
 STATUS_DOMAIN="__STATUS_DOMAIN__"
@@ -83,13 +84,16 @@ mkdir -p "$APP_DIR"
 if [ -s /root/medproject-code.tar.xz.b64 ]; then
   base64 -d /root/medproject-code.tar.xz.b64 | tar -xJf - -C "$APP_DIR" || fail "unpack-embedded-code"
 elif [ -n "$CODE_URL" ]; then
-  curl -sS --fail --retry 5 -o /tmp/medproject.tar.gz "$CODE_URL" || fail "download-code-url"
-  tar -xzf /tmp/medproject.tar.gz -C "$APP_DIR" || fail "unpack-code"
+  curl -sSL --fail --retry 5 -o /tmp/medproject.tar.gz "$CODE_URL" || fail "download-code-url"
+  # GitHub tarballs wrap the tree in a single top-level directory: strip it.
+  STRIP=0; tar -tzf /tmp/medproject.tar.gz | grep -qx 'docker-compose.yml' || STRIP=1
+  tar -xzf /tmp/medproject.tar.gz -C "$APP_DIR" --strip-components="$STRIP" || fail "unpack-code"
+  [ -f "$APP_DIR/docker-compose.yml" ] || fail "unpack-code-layout"
 else
   s3 GET "$CODE_KEY" -o /tmp/medproject.tar.gz || fail "download-code"
   tar -xzf /tmp/medproject.tar.gz -C "$APP_DIR" || fail "unpack-code"
 fi
-echo "$CODE_KEY" > "$APP_DIR/.deployed_key"
+echo "${CODE_KEY:-$CODE_URL}" > "$APP_DIR/.deployed_key"
 report "04-code-ok"
 
 cd "$APP_DIR"
