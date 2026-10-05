@@ -67,9 +67,9 @@ async def source_add(request: Request, user: User = Depends(require_owner)):
     if not name:
         name = config.get("url") or config.get("channel") or config.get("user") or connector.title
     try:
-        minutes = max(15, int(str(form.get("schedule_minutes") or "60")))
+        minutes = max(15, int(str(form.get("schedule_minutes") or "20")))
     except ValueError:
-        minutes = 60
+        minutes = 20
 
     def run(db):
         if db.execute(select(Source).where(Source.name == name)).scalar_one_or_none():
@@ -112,9 +112,16 @@ async def source_quick_search(request: Request, user: User = Depends(require_own
             name="Поиск в интернете: проектирование медобъектов",
             kind=WebSearchConnector.kind,
             connector="web_search",
-            config={"queries": "\n".join(DEFAULT_QUERIES), "days": "60", "max_pages": "25", "use_ai": "1"},
+            config={
+                "queries": "\n".join(DEFAULT_QUERIES),
+                "days": "60",
+                "max_pages": "25",
+                "use_ai": "1",
+                "per_run": "4",
+                "daily_limit": "300",
+            },
             enabled=True,
-            schedule_minutes=720,
+            schedule_minutes=20,
             legal_status=SourceLegalStatus.ALLOWED,
         )
         db.add(source)

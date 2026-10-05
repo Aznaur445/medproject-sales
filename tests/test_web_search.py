@@ -202,7 +202,7 @@ async def test_quick_search_edit_and_ai_settings(client, monkeypatch):
     await client.post("/sources/quick-search", data={"csrf_token": csrf})  # idempotent
     with sync_session() as db:
         sources = db.execute(select(Source).where(Source.connector == "web_search")).scalars().all()
-    assert len(sources) == 1 and sources[0].schedule_minutes == 720
+    assert len(sources) == 1 and sources[0].schedule_minutes == 20
     assert "тендер на проектирование клиники" in sources[0].config["queries"]
     assert "Включить автопоиск" not in (await client.get("/sources")).text
 
@@ -239,3 +239,18 @@ async def test_quick_search_edit_and_ai_settings(client, monkeypatch):
     assert get_provider().name == "deepseek"
     page = await client.get("/settings")
     assert "sk-test" not in page.text and "ИИ и поиск" in page.text
+
+
+def test_search_rotates_queries_and_respects_daily_limit(search_on):
+    asked = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(json.loads(request.content)["query"]["queryText"])
+        return httpx.Response(200, json=api_response(xml_of()))
+
+    sid = _source({"queries": "q1\nq2\nq3", "per_run": "2", "daily_limit": "5"})
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    for _ in range(4):
+        with sync_session() as db:
+            assert run_source(db, sid, http=http).ok
+    assert asked == ["q1", "q2", "q3", "q1", "q2"]  # circle q1..q3, then the daily limit (5) stops spending

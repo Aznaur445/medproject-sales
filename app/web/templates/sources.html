@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% set owner = user.role == 'owner' %}
 {% block content %}
-<h2>Источники заявок</h2>
+<div class="page-head"><div><h2>Источники заявок</h2><div class="sub">Где сервис ищет заявки. Проверка — каждые 20 минут.</div></div></div>
 <p class="muted small">Госзакупки (ЕИС, 44-ФЗ, 223-ФЗ) не подключаются и отсеиваются автоматически. Сайты, которые запрещают
   автоматический сбор (robots.txt, правила площадки), не опрашиваются: для них — «Ручная проверка» со ссылкой-напоминанием.</p>
 {% if owner and not has_web_search %}
 <div class="card" id="autosearch">
   <h3>Автопоиск заявок в интернете</h3>
   <p class="small">Сервис будет сам искать в интернете запросы на проектирование медицинских объектов (19 готовых поисковых
-    запросов, в том числе по Bidzaar и B2B-Center, 2 раза в день), отсеивать рекламу проектировщиков, статьи, видео и
+    запросов, в том числе по Bidzaar и B2B-Center, проверка каждые 20 минут), отсеивать рекламу проектировщиков, статьи, видео и
     госзакупки, а по каждой подходящей заявке — скачивать документацию, разбирать ТЗ и готовить КП на согласование
     в Telegram со ссылкой на заявку.</p>
   {% if not search_ready %}<p class="small"><span class="badge warn">нужен ключ</span> Сначала укажите ключ и каталог Yandex Cloud в
@@ -66,7 +66,7 @@
           {% if f.multiline %}<textarea name="{{ key }}__{{ f.key }}" rows="8" placeholder="{{ f.placeholder }}" {{ 'required' if f.required }}>{{ f.default }}</textarea>
           {% else %}<input name="{{ key }}__{{ f.key }}" {{ 'type=password autocomplete=off' if f.secret }} value="{{ f.default }}" placeholder="{{ f.placeholder }}" {{ 'required' if f.required }}>{% endif %}</div>
         {% endfor %}
-        <div><label>Проверять каждые, мин</label><input name="schedule_minutes" type="number" min="15" value="{{ {'manual_link': 1440, 'web_search': 720}.get(key, 60) }}"></div>
+        <div><label>Проверять каждые, мин</label><input name="schedule_minutes" type="number" min="15" value="{{ {'manual_link': 1440}.get(key, 20) }}"></div>
       </div>
       <button type="submit" style="margin-top:8px">Добавить</button>
     </form>

@@ -1,7 +1,16 @@
 {% extends "base.html" %}
 {% set owner = user.role == 'owner' %}
 {% block content %}
-<h2>Настройки</h2>
+<div class="page-head"><div><h2>Настройки</h2><div class="sub">Подключения, ИИ, автоматика, отправка, реквизиты и тексты КП</div></div></div>
+<div class="tabs">
+  <a class="badge" href="#integrations">Telegram и почта</a>
+  <a class="badge" href="#ai">ИИ и поиск</a>
+  <a class="badge" href="#automation">Автоматика</a>
+  <a class="badge" href="#sending">Отправка</a>
+  <a class="badge" href="#capabilities">Возможности</a>
+  <a class="badge" href="#requisites">Реквизиты</a>
+  <a class="badge" href="#proposal">Тексты КП</a>
+</div>
 
 <div class="card" id="integrations">
   <h3>Подключения: Telegram и почта</h3>

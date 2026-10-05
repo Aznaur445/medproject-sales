@@ -31,7 +31,7 @@ class Source(TimestampMixin, Base):
     config: Mapped[dict[str, Any]] = mapped_column(default=dict)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     legal_status: Mapped[SourceLegalStatus] = mapped_column(String(32), default=SourceLegalStatus.ALLOWED)
-    schedule_minutes: Mapped[int] = mapped_column(Integer, default=60)
+    schedule_minutes: Mapped[int] = mapped_column(Integer, default=20)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)

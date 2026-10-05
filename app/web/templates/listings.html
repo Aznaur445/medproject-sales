@@ -1,10 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row" style="justify-content: space-between">
-  <h2>Заявки</h2>
+{% macro score(value) %}{% if value is not none %}<span class="score {{ 'hi' if value >= 70 else ('mid' if value >= 40 else 'lo') }}">{{ value }}</span>{% else %}<span class="score muted">—</span>{% endif %}{% endmacro %}
+<div class="page-head">
+  <div>
+    <h2>Заявки</h2>
+    <div class="sub">Найденные и добавленные заявки. 🔗 — открыть заявку на площадке.</div>
+  </div>
   {% if user.role == 'owner' %}<a class="btn" href="/listings/new">+ Добавить заявку</a>{% endif %}
 </div>
-<div class="row small" style="margin-bottom: 12px">
+<div class="tabs">
   <a href="/listings" class="badge {{ 'ok' if not status }}">Активные</a>
   {% for key, name in status_names.items() %}
   <a href="/listings?status={{ key }}" class="badge {{ 'ok' if status == key }}">{{ name }}</a>
@@ -12,19 +16,20 @@
 </div>
 <div class="card table-wrap">
   <table>
-    <tr><th>#</th><th>Заявка</th><th>Заказчик</th><th>Статус</th><th>Оценка</th><th>Срок подачи</th></tr>
+    <tr><th>Оценка</th><th>Заявка</th><th>Заказчик</th><th>Статус</th><th>Срок подачи</th><th></th></tr>
     {% for listing, org_name in rows %}
     <tr>
-      <td>{{ listing.id }}</td>
-      <td><a href="/listings/{{ listing.id }}">{{ listing.title }}</a>{% if listing.url %} <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer" title="Открыть на площадке">🔗</a>{% endif %}
+      <td>{{ score(listing.score) }}</td>
+      <td><a href="/listings/{{ listing.id }}">#{{ listing.id }} · {{ listing.title }}</a>
+        {% if listing.area_m2 %}<div class="small muted">{{ '{:,.0f}'.format(listing.area_m2).replace(',', ' ') }} м²{% if listing.region %} · {{ listing.region }}{% endif %}</div>{% endif %}
         {% if listing.exclusion_reason %}<div class="small muted">{{ listing.exclusion_reason }}</div>{% endif %}</td>
       <td>{{ org_name or '—' }}</td>
-      <td><span class="badge">{{ status_names.get(listing.status, listing.status) }}</span></td>
-      <td>{{ listing.score if listing.score is not none else '—' }}</td>
+      <td><span class="badge {{ 'warn' if listing.status == 'proposal_pending' else ('info' if listing.status == 'found' else ('ok' if listing.status in ('won', 'proposal_sent', 'contract') else '')) }}">{{ status_names.get(listing.status, listing.status) }}</span></td>
       <td class="small">{{ to_local(listing.deadline_at) or '—' }}</td>
+      <td class="ext">{% if listing.url %}<a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer" title="Открыть на площадке">🔗 площадка</a>{% endif %}</td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="muted">Заявок нет. Добавьте вручную или дождитесь подключения источников (этап 3).</td></tr>
+    <tr><td colspan="6" class="empty">Заявок нет. <a href="/sources">Включите автопоиск</a> или добавьте заявку вручную.</td></tr>
     {% endfor %}
   </table>
 </div>

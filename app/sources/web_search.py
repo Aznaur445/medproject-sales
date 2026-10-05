@@ -165,9 +165,10 @@ class WebSearchConnector(Connector):
     help = (
         "Сервис сам ищет в интернете заявки на проектирование медицинских объектов (Bidzaar, B2B-Center, Tender.Pro "
         "и др. коммерческие площадки + общий поиск) через официальный Yandex Search API. Нужны ключ и каталог "
-        "Yandex Cloud (Настройки → ИИ и поиск). Каждый запрос платный (тариф Yandex Cloud): 19 запросов 2 раза в "
-        "день ≈ 1150 запросов в месяц. Реклама проектировщиков, статьи, видео, соцсети и госзакупки отсеиваются; "
-        "по каждой подходящей заявке скачивается документация, разбирается ТЗ и готовится КП на согласование."
+        "Yandex Cloud (Настройки → ИИ и поиск). Каждый запрос платный (тариф Yandex Cloud): проверка каждые "
+        "20 минут по 4 запроса по кругу ≈ 290 запросов в сутки, плюс дневной лимит. Реклама проектировщиков, "
+        "статьи, видео, соцсети и госзакупки отсеиваются; по каждой подходящей заявке скачивается документация, "
+        "разбирается ТЗ и готовится КП на согласование."
     )
     config_fields = [
         ConfigField(
@@ -180,6 +181,8 @@ class WebSearchConnector(Connector):
         ConfigField("days", "Только страницы не старше, дней", required=False, default="60"),
         ConfigField("max_pages", "Открывать новых страниц за проверку, не больше", required=False, default="25"),
         ConfigField("use_ai", "Проверять находки ИИ (1 — да, 0 — нет)", required=False, default="1"),
+        ConfigField("per_run", "Поисковых запросов за одну проверку (по кругу)", required=False, default="4"),
+        ConfigField("daily_limit", "Не больше платных запросов в сутки", required=False, default="300"),
     ]
 
     # fetch/parse are kept for the plugin interface; run() is overridden to skip known results cheaply.
@@ -190,7 +193,10 @@ class WebSearchConnector(Connector):
         seen: set[str] = set()
         errors: list[str] = []
         succeeded = 0
-        for query in queries_of(source):
+        for query in self._batch(source):
+            if not self._spend_quota(source):
+                log.info("search_daily_limit_reached", source_id=source.id)
+                break
             try:
                 results = yandex_search(query, cfg, http=http)
             except SearchError as exc:
@@ -206,6 +212,32 @@ class WebSearchConnector(Connector):
             time.sleep(0.2)
         if errors and not succeeded:
             raise SourceError(f"Поиск не работает: {errors[0]}")
+
+    @staticmethod
+    def _batch(source: Source) -> list[str]:
+        """Frequent checks spend few requests: each run takes the next `per_run` queries in a circle."""
+        queries = queries_of(source)
+        if not queries:
+            return []
+        per_run = _int(source.config.get("per_run"), 4, 1, MAX_QUERIES)
+        start = _int(source.config.get("cursor"), 0, 0, 10**6) % len(queries)
+        batch = [queries[(start + i) % len(queries)] for i in range(min(per_run, len(queries)))]
+        source.config = {**source.config, "cursor": str((start + len(batch)) % len(queries))}
+        return batch
+
+    @staticmethod
+    def _spend_quota(source: Source) -> bool:
+        from app.core.redis import get_sync_redis
+
+        limit = _int(source.config.get("daily_limit"), 300, 1, 100_000)
+        key = f"search:requests:{datetime.now(UTC):%Y%m%d}"
+        try:
+            redis = get_sync_redis()
+            used = redis.incr(key)
+            redis.expire(key, 2 * 86400)
+        except Exception:  # noqa: BLE001 - without Redis keep searching, the schedule still limits spending
+            return True
+        return used <= limit
 
     def parse(self, raw: Any, source: Source) -> Iterator[FoundItem]:
         result: SearchResult = raw
