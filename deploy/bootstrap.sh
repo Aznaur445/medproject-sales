@@ -20,6 +20,7 @@ STATUS_DOMAIN="__STATUS_DOMAIN__"
 DATABASE_URL="__DATABASE_URL__"
 DB_SCHEMA="__DB_SCHEMA__"
 SETUP_TOKEN="__SETUP_TOKEN__"
+RESET_SCHEMA="__RESET_SCHEMA__"  # "1": drop DB_SCHEMA before migrations (reinstall whose old .env keys are lost)
 APP_DIR=/opt/medproject-sales
 
 s3() {  # s3 METHOD KEY [curl args...]
@@ -125,6 +126,17 @@ fi
 report "05-env-ok"
 
 docker compose build || fail "compose-build"
+if [ "$RESET_SCHEMA" = "1" ] && [ -n "$DB_SCHEMA" ]; then
+  # Data encrypted with the lost FERNET_KEY of the previous install cannot be read: start from a clean schema.
+  docker compose run --rm --no-deps -T --entrypoint python migrate -c "
+import os, sqlalchemy as sa
+schema = os.environ['DB_SCHEMA']
+assert schema.isidentifier()
+with sa.create_engine(os.environ['DATABASE_URL']).begin() as conn:
+    conn.execute(sa.text(f'DROP SCHEMA IF EXISTS \"{schema}\" CASCADE'))
+print('schema dropped:', schema)
+" || fail "reset-schema"
+fi
 docker rm -f mp-status >/dev/null 2>&1  # free ports 80/443 for the real stack
 docker compose up -d || fail "compose-up"
 report "06-started"
@@ -134,31 +146,31 @@ for _ in $(seq 1 60); do
 done
 docker compose ps > /tmp/ps.txt 2>&1; cat /tmp/ps.txt; report "08-ps" "$(cat /tmp/ps.txt)"
 
-# Owner-approved updates: the timer applies a new version only when deploy/update-request names it.
+# Owner-approved updates from the panel (/updates): the API writes a commit SHA, this timer applies it.
+mkdir -p /var/lib/medproject-update
+CODE_SHA=$(basename "${CODE_URL:-}")
+[[ "$CODE_SHA" =~ ^[0-9a-f]{40}$ ]] && echo "$CODE_SHA" > /var/lib/medproject-update/current
+chown 1000:1000 /var/lib/medproject-update  # uid of the "app" user in the image
 install -m 0755 deploy/updater.sh /usr/local/bin/medproject-update
-cat > /etc/medproject-s3.env <<CONF
-S3_ENDPOINT=${S3_ENDPOINT}
-S3_REGION=${S3_REGION}
-S3_BUCKET=${S3_BUCKET}
-S3_ACCESS=${S3_ACCESS}
-S3_SECRET=${S3_SECRET}
+cat > /etc/medproject-update.env <<CONF
 APP_DIR=${APP_DIR}
+STATE_DIR=/var/lib/medproject-update
+UPDATE_REPO=__UPDATE_REPO__
 CONF
-chmod 600 /etc/medproject-s3.env
 cat > /etc/systemd/system/medproject-update.service <<UNIT
 [Unit]
 Description=Apply an owner-approved MedProject update
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/medproject-s3.env
+EnvironmentFile=/etc/medproject-update.env
 ExecStart=/usr/local/bin/medproject-update
 UNIT
 cat > /etc/systemd/system/medproject-update.timer <<UNIT
 [Unit]
-Description=Check for an owner-approved MedProject update every 5 minutes
+Description=Check for an owner-approved MedProject update every 2 minutes
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec=5min
+OnBootSec=3min
+OnUnitActiveSec=2min
 [Install]
 WantedBy=timers.target
 UNIT

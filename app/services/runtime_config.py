@@ -88,3 +88,45 @@ def mail_config() -> MailConfig:
     else:
         password = _decrypt(data.mail_app_password_enc)
     return MailConfig(user, password, data.mail_from_name or settings.mail_from_name)
+
+
+@dataclass(frozen=True)
+class LLMConfig:
+    provider: str
+    deepseek_key: str | None
+    yandex_key: str | None
+    yandex_folder: str | None
+
+
+@dataclass(frozen=True)
+class SearchConfig:
+    api_key: str | None
+    folder_id: str | None
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.api_key and self.folder_id)
+
+
+def llm_config() -> LLMConfig:
+    settings = get_settings()
+    data = _integrations()
+    provider = data.llm_provider or settings.llm_provider
+    deepseek = (
+        settings.deepseek_api_key.get_secret_value()
+        if settings.deepseek_api_key is not None
+        else _decrypt(data.deepseek_api_key_enc)
+    )
+    yandex = (
+        settings.yandex_api_key.get_secret_value()
+        if settings.yandex_api_key is not None
+        else _decrypt(data.yandex_api_key_enc)
+    )
+    return LLMConfig(provider, deepseek, yandex, settings.yandex_folder_id or data.yandex_folder_id or None)
+
+
+def search_config() -> SearchConfig:
+    data = _integrations()
+    llm = llm_config()
+    key = _decrypt(data.search_api_key_enc) or llm.yandex_key
+    return SearchConfig(key, data.search_folder_id or llm.yandex_folder)

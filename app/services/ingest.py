@@ -197,6 +197,10 @@ def ingest(db: Session, source: Source, items: list[FoundItem]) -> IngestStats:
             listing.status = ListingStatus.EXCLUDED
             listing.exclusion_reason = gov
             stats.new_excluded += 1
+        elif item.exclude_reason:
+            listing.status = ListingStatus.EXCLUDED
+            listing.exclusion_reason = item.exclude_reason[:300]
+            stats.new_excluded += 1
         elif not result.relevant:
             listing.status = ListingStatus.EXCLUDED
             listing.exclusion_reason = "; ".join(result.reasons)[:300]

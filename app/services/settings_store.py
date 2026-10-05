@@ -136,6 +136,14 @@ class Integrations(BaseModel):
     mail_user: str = ""
     mail_app_password_enc: str = ""
     mail_from_name: str = ""
+    # AI: "" = take LLM_PROVIDER from .env
+    llm_provider: str = ""
+    deepseek_api_key_enc: str = ""
+    yandex_api_key_enc: str = ""
+    yandex_folder_id: str = ""
+    # Yandex Search API (internet search); empty key/folder fall back to the YandexGPT ones
+    search_api_key_enc: str = ""
+    search_folder_id: str = ""
 
 
 GROUPS["integrations"] = Integrations

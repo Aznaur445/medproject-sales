@@ -3,7 +3,7 @@
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import ValidationError
 from sqlalchemy import delete, select
@@ -297,6 +297,10 @@ def _integrations_view(db) -> dict[str, Any]:
         "mail_password_set": bool(data.mail_app_password_enc) or env.mail_app_password is not None,
         "tg_from_env": env.telegram_bot_token is not None,
         "mail_from_env": env.mail_app_password is not None,
+        "llm_provider_effective": data.llm_provider or env.llm_provider,
+        "deepseek_key_set": bool(data.deepseek_api_key_enc) or env.deepseek_api_key is not None,
+        "yandex_key_set": bool(data.yandex_api_key_enc) or env.yandex_api_key is not None,
+        "search_key_set": bool(data.search_api_key_enc),
     }
 
 
@@ -336,6 +340,99 @@ async def save_integrations(request: Request, user: User = Depends(require_owner
     runtime_config.reset_cache()
     _flash(request, "Подключения сохранены. Бот подхватит изменения в течение минуты.")
     return RedirectResponse("/settings#integrations", status_code=303)
+
+
+LLM_PROVIDERS = {"none": "Без ИИ (только правила)", "deepseek": "DeepSeek", "yandexgpt": "YandexGPT"}
+
+
+@router.post("/settings/ai")
+async def save_ai(request: Request, user: User = Depends(require_owner)):
+    from app.core.security import encrypt_secret
+    from app.services import runtime_config
+
+    form = await request.form()
+    provider = str(form.get("llm_provider") or "none")
+    if provider not in LLM_PROVIDERS:
+        raise HTTPException(400, "Неизвестный провайдер ИИ")
+    secrets = {
+        name: str(form.get(name) or "").strip() for name in ("deepseek_api_key", "yandex_api_key", "search_api_key")
+    }
+
+    def run(db):
+        data = ss.load_sync(db, ss.Integrations)
+        data.llm_provider = provider
+        data.yandex_folder_id = str(form.get("yandex_folder_id") or "").strip()
+        data.search_folder_id = str(form.get("search_folder_id") or "").strip()
+        for name, value in secrets.items():
+            if value:  # empty field keeps the stored secret
+                setattr(data, f"{name}_enc", encrypt_secret(value))
+        ss.save_sync(db, data, user.id)
+        audit_sync(
+            db,
+            "settings_ai",
+            actor="web",
+            user_id=user.id,
+            details={"provider": provider, **{f"{k}_changed": bool(v) for k, v in secrets.items()}},
+        )
+
+    await in_db(run)
+    runtime_config.reset_cache()
+    _flash(request, "Настройки ИИ и поиска сохранены.")
+    return RedirectResponse("/settings#ai", status_code=303)
+
+
+@router.post("/settings/ai/test")
+async def test_ai(request: Request, user: User = Depends(require_owner)):
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.llm import LLMError, get_provider
+    from app.services import runtime_config
+
+    runtime_config.reset_cache()
+    provider = get_provider()
+    if provider is None:
+        _flash(request, "ИИ выключен: выберите DeepSeek или YandexGPT и сохраните.", "warn")
+        return RedirectResponse("/settings#ai", status_code=303)
+
+    def check() -> str | None:
+        try:
+            provider.chat("Ответь одним словом.", "Скажи: готово")
+            return None
+        except LLMError as exc:
+            return str(exc)
+
+    error = await run_in_threadpool(check)
+    _flash(
+        request,
+        f"{provider.name}: ответ получен, ИИ подключён." if error is None else f"Ошибка: {error}",
+        "ok" if error is None else "bad",
+    )
+    return RedirectResponse("/settings#ai", status_code=303)
+
+
+@router.post("/settings/ai/test-search")
+async def test_search(request: Request, user: User = Depends(require_owner)):
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.services import runtime_config
+    from app.services.web_search import SearchError, yandex_search
+
+    runtime_config.reset_cache()
+    cfg = runtime_config.search_config()
+    if not cfg.ready:
+        _flash(request, "Укажите ключ API и идентификатор каталога Yandex Cloud.", "bad")
+        return RedirectResponse("/settings#ai", status_code=303)
+
+    def check() -> str:
+        try:
+            results = yandex_search("проектирование медицинского центра тендер", cfg)
+            return f"Поиск работает: найдено {len(results)} результатов на первой странице."
+        except SearchError as exc:
+            return f"Ошибка поиска: {exc}"
+
+    message = await run_in_threadpool(check)
+    _flash(request, message, "ok" if message.startswith("Поиск работает") else "bad")
+    return RedirectResponse("/settings#ai", status_code=303)
 
 
 @router.post("/settings/integrations/test-telegram")
@@ -387,3 +484,59 @@ async def test_mail(request: Request, user: User = Depends(require_owner)):
         "ok" if error is None else "bad",
     )
     return RedirectResponse("/settings#integrations", status_code=303)
+
+
+# --- updates (owner-approved, applied by the host timer) ------------------------------------------
+
+
+@router.get("/updates")
+async def updates_page(request: Request, user: User = Depends(require_owner)):
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.services import updates
+
+    error = None
+    newer: list = []
+    try:
+        newer = updates.newer_than_current(await run_in_threadpool(updates.recent_commits))
+    except updates.UpdateError as exc:
+        error = str(exc)
+    return render(
+        request,
+        "updates.html",
+        user=user,
+        current=updates.current_version(),
+        pending=updates.pending_request(),
+        status=updates.status(),
+        installed=updates.updater_installed(),
+        newer=newer,
+        error=error,
+        to_local=to_local,
+        flash=request.session.pop("flash", None),
+    )
+
+
+@router.post("/updates/install")
+async def updates_install(request: Request, user: User = Depends(require_owner)):
+    from fastapi.concurrency import run_in_threadpool
+
+    from app.services import updates
+
+    form = await request.form()
+    sha = str(form.get("sha") or "").strip()
+    if form.get("confirm") != "1":
+        _flash(request, "Поставьте галочку подтверждения.", "bad")
+        return RedirectResponse("/updates", status_code=303)
+    try:
+        commits = await run_in_threadpool(updates.recent_commits)
+        updates.request_update(sha, commits)
+    except updates.UpdateError as exc:
+        _flash(request, str(exc), "bad")
+        return RedirectResponse("/updates", status_code=303)
+    await in_db(lambda db: audit_sync(db, "update_requested", actor="web", user_id=user.id, details={"sha": sha}))
+    _flash(
+        request,
+        "Обновление запрошено. Сервер начнёт его в течение 2 минут; панель будет недоступна 3–10 минут, "
+        "затем обновите страницу.",
+    )
+    return RedirectResponse("/updates", status_code=303)

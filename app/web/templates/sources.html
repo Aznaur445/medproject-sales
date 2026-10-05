@@ -4,6 +4,18 @@
 <h2>Источники заявок</h2>
 <p class="muted small">Госзакупки (ЕИС, 44-ФЗ, 223-ФЗ) не подключаются и отсеиваются автоматически. Сайты, которые запрещают
   автоматический сбор (robots.txt, правила площадки), не опрашиваются: для них — «Ручная проверка» со ссылкой-напоминанием.</p>
+{% if owner and not has_web_search %}
+<div class="card" id="autosearch">
+  <h3>Автопоиск заявок в интернете</h3>
+  <p class="small">Сервис будет сам искать в интернете запросы на проектирование медицинских объектов (15 готовых поисковых
+    запросов, 2 раза в день), открывать найденные страницы, отсеивать рекламу проектировщиков, статьи и госзакупки
+    и присылать подходящие заявки в Telegram.</p>
+  {% if not search_ready %}<p class="small"><span class="badge warn">нужен ключ</span> Сначала укажите ключ и каталог Yandex Cloud в
+    <a href="/settings#ai">Настройки → ИИ и поиск</a>.</p>{% endif %}
+  <form method="post" action="/sources/quick-search"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Включить автопоиск</button></form>
+</div>
+{% endif %}
 <div class="card table-wrap">
   <table>
     <tr><th>Источник</th><th>Тип</th><th>Состояние</th><th>Последняя проверка</th><th>Заявок</th><th></th></tr>
@@ -25,6 +37,7 @@
       <td>{% if owner and s.connector != 'manual' %}
         <div class="row small">
           {% if s.enabled and c and c.runnable %}<form method="post" action="/sources/{{ s.id }}/run"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link" type="submit">проверить сейчас</button></form>{% endif %}
+          {% if c and c.config_fields %}<a href="/sources/{{ s.id }}/edit">изменить</a>{% endif %}
           <form method="post" action="/sources/{{ s.id }}/toggle"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link" type="submit">{{ 'выключить' if s.enabled else 'включить' }}</button></form>
           <form method="post" action="/sources/{{ s.id }}/delete"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label class="check small"><input type="checkbox" required> удалить</label><button class="link" type="submit">ок</button></form>
         </div>{% endif %}</td>
@@ -48,10 +61,11 @@
       <div class="form-grid">
         <div><label>Название (как будет видно в списке)</label><input name="name"></div>
         {% for f in c.config_fields %}
-        <div><label>{{ f.label }}{% if f.required %} *{% endif %}</label>
-          <input name="{{ key }}__{{ f.key }}" {{ 'type=password autocomplete=off' if f.secret }} placeholder="{{ f.placeholder }}" {{ 'required' if f.required }}></div>
+        <div {% if f.multiline %}style="grid-column:1/-1"{% endif %}><label>{{ f.label }}{% if f.required %} *{% endif %}</label>
+          {% if f.multiline %}<textarea name="{{ key }}__{{ f.key }}" rows="8" placeholder="{{ f.placeholder }}" {{ 'required' if f.required }}>{{ f.default }}</textarea>
+          {% else %}<input name="{{ key }}__{{ f.key }}" {{ 'type=password autocomplete=off' if f.secret }} value="{{ f.default }}" placeholder="{{ f.placeholder }}" {{ 'required' if f.required }}>{% endif %}</div>
         {% endfor %}
-        <div><label>Проверять каждые, мин</label><input name="schedule_minutes" type="number" min="15" value="{{ 1440 if key == 'manual_link' else 60 }}"></div>
+        <div><label>Проверять каждые, мин</label><input name="schedule_minutes" type="number" min="15" value="{{ {'manual_link': 1440, 'web_search': 720}.get(key, 60) }}"></div>
       </div>
       <button type="submit" style="margin-top:8px">Добавить</button>
     </form>

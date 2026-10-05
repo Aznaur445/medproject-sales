@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Источник: {{ source.name }}</h2>
+<div class="card">
+  <p class="small muted">{{ connector.help }}</p>
+  <form method="post" action="/sources/{{ source.id }}/edit">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      {% for f in connector.config_fields %}
+      <div {% if f.multiline %}style="grid-column:1/-1"{% endif %}><label>{{ f.label }}{% if f.required %} *{% endif %}{% if f.secret and source.config.get(f.key ~ '_enc') %} <span class="badge ok">задан</span>{% endif %}</label>
+        {% if f.multiline %}<textarea name="{{ f.key }}" rows="14">{{ source.config.get(f.key, f.default) }}</textarea>
+        {% elif f.secret %}<input name="{{ f.key }}" type="password" autocomplete="off" placeholder="пусто — оставить как есть">
+        {% else %}<input name="{{ f.key }}" value="{{ source.config.get(f.key, f.default) }}" placeholder="{{ f.placeholder }}">{% endif %}</div>
+      {% endfor %}
+      <div><label>Проверять каждые, мин</label><input name="schedule_minutes" type="number" min="15" value="{{ source.schedule_minutes }}"></div>
+    </div>
+    <div class="row" style="margin-top:8px"><button type="submit">Сохранить</button> <a href="/sources">отмена</a></div>
+  </form>
+</div>
+{% endblock %}

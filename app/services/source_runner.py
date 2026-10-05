@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.models import Source
+from app.models import Listing, Source
 from app.models.enums import SourceLegalStatus
 from app.services.audit import audit_sync
 from app.services.ingest import IngestStats, ingest
@@ -60,7 +60,8 @@ def run_source(
     own_client = http is None
     client = http or httpx.Client(timeout=30)
     try:
-        items = list(connector.run(source, client))
+        known = frozenset(db.execute(select(Listing.external_id).where(Listing.source_id == source_id)).scalars())
+        items = list(connector.run(source, client, known=known))
         stats = ingest(db, source, items)
         source.last_success_at = now
         source.consecutive_failures = 0

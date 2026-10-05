@@ -21,6 +21,7 @@
     <a href="/settings">Настройки</a>
     <a href="/optouts">Отказы</a>
     <a href="/audit">Журнал</a>
+    {% if user and user.role == 'owner' %}<a href="/updates">Обновления</a>{% endif %}
   </nav>
   <form method="post" action="/logout">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

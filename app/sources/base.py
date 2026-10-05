@@ -44,6 +44,7 @@ class FoundItem:
     contact_email: str | None = None
     contact_source: str | None = None
     documents: list[dict[str, str]] = field(default_factory=list)
+    exclude_reason: str | None = None  # set by the connector when it already knows the item is not a request
 
 
 @dataclass
@@ -53,6 +54,8 @@ class ConfigField:
     secret: bool = False
     required: bool = True
     placeholder: str = ""
+    multiline: bool = False
+    default: str = ""
 
 
 def clean(text: str | None) -> str:
@@ -85,7 +88,8 @@ class Connector(ABC):
         item.customer_name = clean(item.customer_name) or None
         return item
 
-    def run(self, source: Source, http: httpx.Client) -> Iterator[FoundItem]:
+    def run(self, source: Source, http: httpx.Client, known: frozenset[str] = frozenset()) -> Iterator[FoundItem]:
+        """`known` holds external ids already stored for this source (connectors may skip costly work for them)."""
         for raw in self.fetch(source, http):
             for item in self.parse(raw, source):
                 item = self.normalize(item)
@@ -128,6 +132,17 @@ def robots_allowed(url: str) -> bool:
     parts = urlsplit(url)
     robots = _robots_for(f"{parts.scheme}://{parts.netloc}")
     return robots is None or robots.can_fetch(USER_AGENT, url)
+
+
+def page_text(html: str, limit: int = 20000) -> str:
+    """Visible text of an HTML page without menus, scripts and footers."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "nav", "header", "footer", "aside", "form", "svg"]):
+        tag.decompose()
+    main = soup.find("main") or soup.find("article") or soup.body or soup
+    return clean(main.get_text(" "))[:limit]
 
 
 def get_page(http: httpx.Client, url: str) -> str:

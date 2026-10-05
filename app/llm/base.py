@@ -10,7 +10,6 @@ Safety rules (spec §8):
 import json
 import re
 from abc import ABC, abstractmethod
-from functools import lru_cache
 from pathlib import Path
 
 import httpx
@@ -19,6 +18,7 @@ from pydantic import BaseModel, ValidationError
 from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.llm.masking import Masker
+from app.services.runtime_config import llm_config
 
 log = get_logger(__name__)
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
@@ -87,12 +87,13 @@ class DeepSeekProvider(LLMProvider):
 
     def chat(self, system: str, user: str) -> str:
         s = get_settings()
-        if s.deepseek_api_key is None:
-            raise LLMError("Не задан DEEPSEEK_API_KEY")
+        key = llm_config().deepseek_key
+        if not key:
+            raise LLMError("Не задан ключ DeepSeek (Настройки → Подключения)")
         try:
             resp = httpx.post(
                 f"{s.deepseek_base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {s.deepseek_api_key.get_secret_value()}"},
+                headers={"Authorization": f"Bearer {key}"},
                 json={
                     "model": s.deepseek_model,
                     "temperature": 0.1,
@@ -111,18 +112,18 @@ class YandexGPTProvider(LLMProvider):
     name = "yandexgpt"
 
     def chat(self, system: str, user: str) -> str:
-        s = get_settings()
-        if s.yandex_api_key is None or not s.yandex_folder_id:
-            raise LLMError("Не заданы YANDEX_API_KEY / YANDEX_FOLDER_ID")
+        cfg = llm_config()
+        if not cfg.yandex_key or not cfg.yandex_folder:
+            raise LLMError("Не заданы ключ и каталог Yandex Cloud (Настройки → Подключения)")
         try:
             resp = httpx.post(
                 "https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
                 headers={
-                    "Authorization": f"Api-Key {s.yandex_api_key.get_secret_value()}",
-                    "x-folder-id": s.yandex_folder_id,
+                    "Authorization": f"Api-Key {cfg.yandex_key}",
+                    "x-folder-id": cfg.yandex_folder,
                 },
                 json={
-                    "modelUri": f"gpt://{s.yandex_folder_id}/yandexgpt/latest",
+                    "modelUri": f"gpt://{cfg.yandex_folder}/yandexgpt/latest",
                     "completionOptions": {"temperature": 0.1, "maxTokens": 4000},
                     "messages": [{"role": "system", "text": system}, {"role": "user", "text": user}],
                 },
@@ -134,8 +135,10 @@ class YandexGPTProvider(LLMProvider):
             raise LLMError(f"YandexGPT недоступен: {type(exc).__name__}") from exc
 
 
-@lru_cache
 def get_provider() -> LLMProvider | None:
-    """None when no provider is configured: callers fall back to rule-based extraction."""
-    name = get_settings().llm_provider
+    """None when no provider is configured: callers fall back to rule-based extraction.
+
+    The provider and keys come from .env or from the panel (Настройки → Подключения), see runtime_config.
+    """
+    name = llm_config().provider
     return {"deepseek": DeepSeekProvider, "yandexgpt": YandexGPTProvider}.get(name, lambda: None)()

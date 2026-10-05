@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Обновления</h2>
+<div class="card">
+  <p>Установленная версия: <b>{{ current[:7] if current else 'неизвестна' }}</b></p>
+  {% if status %}
+  <p class="small">Последнее обновление: <span class="badge {{ {'ok': 'ok', 'failed': 'bad', 'running': 'warn', 'rolled_back': 'bad'}.get(status.state, '') }}">{{ {'ok': 'успешно', 'failed': 'ошибка', 'running': 'идёт', 'rolled_back': 'ошибка, возвращена прежняя версия'}.get(status.state, status.state) }}</span>
+    {{ (status.sha or '')[:7] }} · {{ status.at or '' }}</p>
+  {% if status.message %}<p class="small muted">{{ status.message }}</p>{% endif %}
+  {% endif %}
+  {% if pending %}<p><span class="badge warn">ожидает установки</span> {{ pending[:7] }} — сервер начнёт в течение 2 минут.</p>{% endif %}
+  {% if not installed %}<p class="small"><span class="badge warn">не настроено</span> Обновление из панели появится после установки сервера новым скриптом.</p>{% endif %}
+  <p class="small muted">Ничего не обновляется само: новая версия ставится только после вашего подтверждения. Перед обновлением
+    делается резервная копия базы; если после обновления сервис не запустится, сервер вернёт прежнюю версию.</p>
+</div>
+
+<div class="card">
+  <h3>Доступные версии</h3>
+  {% if error %}<p class="badge bad">{{ error }}</p>
+  {% elif not newer %}<p class="muted">Установлена последняя версия.</p>
+  {% else %}
+  <div class="table-wrap"><table>
+    <tr><th>Версия</th><th>Что изменилось</th><th>Дата</th></tr>
+    {% for c in newer %}<tr><td><code>{{ c.short }}</code></td><td>{{ c.title }}</td><td class="small">{{ to_local(c.date) if c.date else '' }}</td></tr>{% endfor %}
+  </table></div>
+  {% if installed %}
+  <form method="post" action="/updates/install" style="margin-top:10px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="sha" value="{{ newer[0].sha }}">
+    <label class="check"><input type="checkbox" name="confirm" value="1" required> Понимаю, что панель и бот будут недоступны несколько минут</label>
+    <button type="submit" style="margin-top:8px">Установить {{ newer[0].short }}</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

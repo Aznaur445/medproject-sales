@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     backup_dir: str = "./data/backups"
     backup_retention_days: int = 14
 
+    # Owner-approved updates: the panel writes a request here, the host timer (deploy/updater.sh) applies it.
+    update_dir: str = "./data/update"
+    update_repo: str = "Aznaur445/medproject-sales"
+    update_branch: str = "claude/new-session-11cxoi"
+
     @field_validator(
         "telegram_bot_token",
         "setup_token",

@@ -58,7 +58,16 @@ services:
 
   api:
     <<: *app
-    volumes: [files:/data/files]
+    volumes:
+      - files:/data/files
+      # update requests from the panel <-> host timer (deploy/updater.sh)
+      - /var/lib/medproject-update:/update
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}}
+      REDIS_URL: redis://redis:6379/0
+      FILES_DIR: /data/files
+      BACKUP_DIR: /data/backups
+      UPDATE_DIR: /update
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }

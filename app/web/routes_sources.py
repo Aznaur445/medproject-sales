@@ -1,12 +1,14 @@
 """Panel: search sources (F1) and filters (F2, F3)."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 
 from app.core.security import encrypt_secret
 from app.models import Listing, Source, User
 from app.models.enums import ListingStatus, SourceLegalStatus
+from app.services import runtime_config
 from app.services import settings_store as ss
 from app.services.audit import audit_sync
 from app.sources import REGISTRY, get_connector
@@ -31,12 +33,15 @@ async def sources_page(request: Request, user: User = Depends(current_user)):
         return sources, counts
 
     sources, counts = await in_db(load)
+    search_ready = await run_in_threadpool(lambda: runtime_config.search_config().ready)
     return render(
         request,
         "sources.html",
         user=user,
         sources=sources,
         counts=counts,
+        has_web_search=any(s.connector == "web_search" and s.enabled for s in sources),
+        search_ready=search_ready,
         connectors=REGISTRY,
         to_local=to_local,
         flash=request.session.pop("flash", None),
@@ -88,6 +93,85 @@ async def source_add(request: Request, user: User = Depends(require_owner)):
         _flash(request, "Источник с таким названием уже есть", "bad")
     else:
         _flash(request, "Источник добавлен. Первая проверка — в течение 5 минут или нажмите «Проверить сейчас».")
+    return RedirectResponse("/sources", status_code=303)
+
+
+@router.post("/sources/quick-search")
+async def source_quick_search(request: Request, user: User = Depends(require_owner)):
+    """One click: the internet search source with the default query set, twice a day."""
+    from app.sources.web_search import DEFAULT_QUERIES, WebSearchConnector
+
+    def run(db):
+        existing = db.execute(select(Source).where(Source.connector == "web_search")).scalars().first()
+        if existing is not None:
+            existing.enabled = True
+            existing.circuit_open_until = None
+            existing.consecutive_failures = 0
+            return existing.id
+        source = Source(
+            name="Поиск в интернете: проектирование медобъектов",
+            kind=WebSearchConnector.kind,
+            connector="web_search",
+            config={"queries": "\n".join(DEFAULT_QUERIES), "days": "60", "max_pages": "25", "use_ai": "1"},
+            enabled=True,
+            schedule_minutes=720,
+            legal_status=SourceLegalStatus.ALLOWED,
+        )
+        db.add(source)
+        db.flush()
+        audit_sync(db, "source_added", actor="web", user_id=user.id, entity_type="source", entity_id=source.id)
+        return source.id
+
+    source_id = await in_db(run)
+    if runtime_config.search_config().ready:
+        from app.worker.tasks_sales import run_source_task
+
+        run_source_task.delay(source_id)
+        _flash(request, "Автопоиск включён, первая проверка уже идёт. Найденное появится в «Заявках» и в Telegram.")
+    else:
+        _flash(
+            request,
+            "Автопоиск включён, но заработает после ввода ключа Yandex Cloud в «Настройки → ИИ и поиск».",
+            "warn",
+        )
+    return RedirectResponse("/sources", status_code=303)
+
+
+@router.get("/sources/{source_id}/edit")
+async def source_edit_form(request: Request, source_id: int, user: User = Depends(require_owner)):
+    source = await in_db(lambda db: db.get(Source, source_id))
+    if source is None or source.connector not in REGISTRY:
+        raise HTTPException(404)
+    return render(request, "source_edit.html", user=user, source=source, connector=get_connector(source.connector))
+
+
+@router.post("/sources/{source_id}/edit")
+async def source_edit(request: Request, source_id: int, user: User = Depends(require_owner)):
+    form = await request.form()
+
+    def run(db):
+        source = db.get(Source, source_id)
+        if source is None or source.connector not in REGISTRY:
+            raise HTTPException(404)
+        config = dict(source.config)
+        for field in get_connector(source.connector).config_fields:
+            value = str(form.get(field.key) or "").strip()
+            if field.secret:
+                if value:
+                    config[f"{field.key}_enc"] = encrypt_secret(value)
+            elif value or not field.required:
+                config[field.key] = value
+        source.config = config
+        try:
+            source.schedule_minutes = max(15, int(str(form.get("schedule_minutes") or source.schedule_minutes)))
+        except ValueError:
+            pass
+        source.circuit_open_until = None
+        source.consecutive_failures = 0
+        audit_sync(db, "source_edited", actor="web", user_id=user.id, entity_type="source", entity_id=source_id)
+
+    await in_db(run)
+    _flash(request, "Источник сохранён.")
     return RedirectResponse("/sources", status_code=303)
 
 

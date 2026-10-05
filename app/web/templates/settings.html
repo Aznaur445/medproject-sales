@@ -33,6 +33,43 @@
   {% endif %}
 </div>
 
+<div class="card" id="ai">
+  <h3>ИИ и поиск в интернете</h3>
+  <p class="small muted">ИИ разбирает заявки и отличает настоящие запросы заказчиков от рекламы. Поиск в интернете — через
+    официальный Yandex Search API (Yandex Cloud, оплата за запросы). Ключи хранятся зашифрованными; пустое поле — оставить как есть.</p>
+  <form method="post" action="/settings/ai">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="form-grid">
+      <div><label>ИИ-модель</label>
+        <select name="llm_provider">
+          {% for key, title in {'none': 'Без ИИ (только правила)', 'deepseek': 'DeepSeek', 'yandexgpt': 'YandexGPT'}.items() %}
+          <option value="{{ key }}" {{ 'selected' if llm_provider_effective == key }}>{{ title }}</option>
+          {% endfor %}
+        </select></div>
+      <div><label>Ключ DeepSeek {% if deepseek_key_set %}<span class="badge ok">задан</span>{% endif %}</label>
+        <input name="deepseek_api_key" type="password" autocomplete="off" placeholder="{{ 'задан' if deepseek_key_set else 'sk-...' }}"></div>
+      <div><label>Ключ API Yandex Cloud {% if yandex_key_set %}<span class="badge ok">задан</span>{% endif %}</label>
+        <input name="yandex_api_key" type="password" autocomplete="off" placeholder="{{ 'задан' if yandex_key_set else 'AQVN...' }}"></div>
+      <div><label>Идентификатор каталога Yandex Cloud</label>
+        <input name="yandex_folder_id" value="{{ integrations.yandex_folder_id }}" placeholder="b1g..."></div>
+      <div><label>Отдельный ключ для Search API {% if search_key_set %}<span class="badge ok">задан</span>{% endif %}</label>
+        <input name="search_api_key" type="password" autocomplete="off" placeholder="{{ 'задан' if search_key_set else 'если пусто — ключ Yandex Cloud выше' }}"></div>
+      <div><label>Каталог для Search API</label>
+        <input name="search_folder_id" value="{{ integrations.search_folder_id }}" placeholder="если пусто — каталог выше"></div>
+    </div>
+    {% if owner %}<button type="submit" style="margin-top:8px">Сохранить</button>{% endif %}
+  </form>
+  {% if owner %}
+  <div class="row" style="margin-top:10px">
+    <form method="post" action="/settings/ai/test"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary" type="submit">Проверить ИИ</button></form>
+    <form method="post" action="/settings/ai/test-search"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="secondary" type="submit">Проверить поиск</button></form>
+  </div>
+  <p class="small muted">Как получить ключи — в «Руководстве» (docs/USER_GUIDE.md, раздел «Поиск в интернете»).</p>
+  {% endif %}
+</div>
+
 <div class="card" id="sending">
   <h3>Отправка</h3>
   <form method="post" action="/settings/pause" class="row" style="margin-bottom:12px">
